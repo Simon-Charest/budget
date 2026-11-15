@@ -1,0 +1,22 @@
+[Unit]
+Description=Budget private web application
+After=network.target
+
+[Service]
+Type=simple
+User=scharest
+Group=scharest
+WorkingDirectory=%h/source/budget
+EnvironmentFile=%h/source/budget/.env
+ExecStart=%h/source/budget/.venv/bin/python %h/source/budget
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/source/budget/data
+
+[Install]
+WantedBy=multi-user.target
