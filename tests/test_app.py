@@ -581,3 +581,52 @@ def test_dog_and_cat_expenses_are_merged_into_pet_once(monkeypatch, tmp_path):
     with budget_app.connect() as db:
         assert db.execute("SELECT 1 FROM categories WHERE category_key = 'dog'").fetchone()
     client.close()
+
+
+def test_im_recipient_is_removed_from_expenses_and_members(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-23-remove-im-recipient'")
+        db.execute("INSERT INTO household_members (name) VALUES ('Î.-M.')")
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, paid_by, transfer_to) VALUES (?, ?, ?, ?)",
+            [("2025-03-01", 10.0, "Sam", "Î.-M."), ("2025-03-02", 20.0, "Alex", "Î.-M."), ("2025-03-03", 5.0, "Sam", "Alex")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM expenses WHERE transfer_to = 'Î.-M.'").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM expenses WHERE spent_on LIKE '2025-03-%' AND transfer_to IS NULL").fetchone()[0] == 2
+        assert db.execute("SELECT transfer_to FROM expenses WHERE spent_on = '2025-03-03'").fetchone()[0] == "Alex"
+        assert db.execute("SELECT COUNT(*) FROM expenses WHERE spent_on LIKE '2025-03-%'").fetchone()[0] == 3
+        assert not db.execute("SELECT 1 FROM household_members WHERE name = 'Î.-M.'").fetchone()
+    client.close()
+
+
+def test_succession_recipient_becomes_succession_category(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-23-succession-recipient-to-category'")
+        db.execute("INSERT INTO household_members (name) VALUES ('succession')")
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category, paid_by, transfer_to) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("2025-04-01", 100.0, "food", "Sam", "succession"),
+                ("2025-04-02", 50.0, None, "Alex", "Succession"),
+                ("2025-04-03", 9.0, "coffee", "Sam", "Alex"),
+            ],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        rows = [tuple(row) for row in db.execute(
+            "SELECT spent_on, amount, category, transfer_to FROM expenses WHERE spent_on LIKE '2025-04-%' ORDER BY spent_on"
+        )]
+        assert rows == [
+            ("2025-04-01", 100.0, "succession", None),
+            ("2025-04-02", 50.0, "succession", None),
+            ("2025-04-03", 9.0, "coffee", "Alex"),
+        ]
+        assert tuple(db.execute("SELECT name_en, name_fr FROM categories WHERE category_key = 'succession'").fetchone()) == (
+            "Inheritance", "Succession",
+        )
+        assert not db.execute("SELECT 1 FROM household_members WHERE name = 'succession'").fetchone()
+    client.close()

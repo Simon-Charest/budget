@@ -1,4 +1,8 @@
-﻿[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+﻿# Usage: .\bin\deploy.ps1
+# Commits and pushes every change, deploys it on the server, then replaces the local database with
+# the production one. Asks no questions: the server's sudo password comes from BUDGET_DEPLOY_PASSWORD
+# in .env and goes through SSH's input, never on a command line.
+[CmdletBinding()]
 param(
     [string]$CommitMessage = "Deploy budget app $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 )
@@ -47,6 +51,62 @@ function Invoke-Checked {
     }
     if ($LASTEXITCODE -ne 0) {
         throw "$Operation failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Invoke-RemoteScript {
+    # Sends the sudo password, then the script, to bash on the server through SSH's input. In the script,
+    # `s` runs a command with sudo and that password (and fails instead of prompting when none is set).
+    param(
+        [Parameter(Mandatory = $true)][string]$Script,
+        [Parameter(Mandatory = $true)][string]$Operation
+    )
+
+    $payload = @(
+        # Left empty: should a byte order mark still be sent, it lands here and the password is read correctly
+        '',
+        'IFS= read -r p || true',
+        $SudoPassword,
+        'p=${p%$''\r''}',
+        's() { if [ -n "$p" ]; then printf ''%s\n'' "$p" | sudo -S -p '''' "$@"; else sudo -n "$@"; fi; }',
+        # Parsed whole before it runs, with its own input closed: no command can read the rest of the script
+        '{',
+        $Script,
+        '} < /dev/null',
+        'exit $?',
+        ''
+    ) -join "`n"
+
+    # Written as raw bytes: piping text to a native command in Windows PowerShell 5.1 adds a byte order
+    # mark and CRLF line endings, which bash would read as part of the commands
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new($Ssh)
+    $startInfo.Arguments = "-o BatchMode=yes $Remote `"bash -s`""
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardInput = $true
+    # .NET Framework opens the child's input with the console's input encoding, and writes its byte order mark
+    $previousInputEncoding = [Console]::InputEncoding
+    try {
+        [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
+    } catch {
+        $previousInputEncoding = $null
+    }
+    try {
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+    } finally {
+        if ($previousInputEncoding) {
+            [Console]::InputEncoding = $previousInputEncoding
+        }
+    }
+    try {
+        $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($payload)
+        $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+        $process.StandardInput.Close()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "$Operation failed with exit code $($process.ExitCode)."
+        }
+    } finally {
+        $process.Dispose()
     }
 }
 
@@ -142,7 +202,8 @@ function New-ProductionEnvFile {
     $content = [System.Collections.Generic.List[string]]::new()
     foreach ($line in Get-Content -LiteralPath $SourcePath) {
         if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=') {
-            if ($overrides.ContainsKey($matches[1])) {
+            # Deployment settings, such as the sudo password, never go to the server
+            if ($overrides.ContainsKey($matches[1]) -or $matches[1].StartsWith('BUDGET_DEPLOY_')) {
                 continue
             }
         }
@@ -196,7 +257,7 @@ try {
         $RemoteRoot = $remoteRootSetting
     }
     $RemoteRoot = $RemoteRoot.TrimEnd('/')
-    $RemoteUser = $Remote.Split('@')[0]
+    $SudoPassword = [string]$settings['BUDGET_DEPLOY_PASSWORD']
 
     $password = [string]$settings['BUDGET_DATABASE_PASSWORD']
     if ($password.Length -lt 16) {
@@ -251,11 +312,12 @@ try {
     $remoteRepoCheck = "test -d '$RemoteRoot/.git' && test -x '$RemoteRoot/.venv/bin/python'"
     Invoke-Checked -Executable $Ssh -Arguments @('-n', $Remote, $remoteRepoCheck) -Operation 'Remote deployment directory check'
 
-    if (-not $PSCmdlet.ShouldProcess(
-        "$RemoteRoot on $Remote",
-        "Commit/push branch $Branch, deploy over SSH, and replace the local database with an encrypted production backup"
-    )) {
-        return
+    # Before anything is committed, so a missing or wrong password changes nothing
+    Write-Output 'Checking sudo on the server...'
+    try {
+        Invoke-RemoteScript -Script 's true' -Operation 'Remote sudo check'
+    } catch {
+        throw 'sudo failed on the server: set BUDGET_DEPLOY_PASSWORD in .env to the sudo password of the deploy account. Nothing was changed.'
     }
 
     New-Item -ItemType Directory -Force -Path $localBackupDirectory | Out-Null
@@ -302,20 +364,19 @@ try {
         "cd '$RemoteRoot'",
         "git pull --ff-only origin '$Branch'",
         '.venv/bin/python -m pip install -r requirements.txt',
-        "sudo install -o root -g root -m 644 'deploy/budget.service' '/etc/systemd/system/budget.service'",
-        'sudo systemctl daemon-reload',
-        'sudo systemctl enable budget',
-        'sudo systemctl restart budget',
+        "s install -o root -g root -m 644 'deploy/budget.service' '/etc/systemd/system/budget.service'",
+        's systemctl daemon-reload',
+        's systemctl enable --quiet budget',
+        's systemctl restart budget',
         # Uvicorn answers only after startup, which applies the database migrations, so the backup below includes them
-        '{ up=0; for i in $(seq 1 30); do if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8001/api/me; then up=1; break; fi; sleep 1; done; [ $up = 1 ] || { echo The budget service did not answer on 127.0.0.1:8001; sudo journalctl -u budget -n 30 --no-pager; false; }; }',
-        'sudo systemctl is-active --quiet budget',
+        '{ up=0; for i in $(seq 1 30); do if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8001/api/me; then up=1; break; fi; sleep 1; done; [ $up = 1 ] || { echo The budget service did not answer on 127.0.0.1:8001; s journalctl -u budget -n 30 --no-pager; false; }; }',
+        'systemctl is-active --quiet budget',
         ".venv/bin/python . backup-database '$remoteBackup'",
         ".venv/bin/python . verify-database '$remoteBackup'",
         "chmod 600 '$remoteBackup'",
         "install -m 600 '$remoteBackup' '$remoteTransfer'"
     ) -join ' && '
-    # -t: the server's sudo asks for a password, which needs a terminal.
-    Invoke-Checked -Executable $Ssh -Arguments @('-t', $Remote, $deployCommand) -Operation 'Production deployment and encrypted database backup'
+    Invoke-RemoteScript -Script $deployCommand -Operation 'Production deployment and encrypted database backup'
 
     Write-Output 'Downloading the encrypted production database...'
     Invoke-Checked -Executable $Scp -Arguments @('-o', 'BatchMode=yes', "${Remote}:$remoteTransfer", $LocalRemoteBackup) -Operation 'Download production database backup'

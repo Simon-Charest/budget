@@ -39,6 +39,7 @@ Create a private `.env` in the project root using the settings below. `.env.exam
 | `BUDGET_DEPLOY_REMOTE` | `scharest@NUC7i3BNH` | SSH account and host used by `bin/deploy.ps1`. |
 | `BUDGET_DEPLOY_REMOTE_ROOT` | `~/source/budget` | Remote project checkout. The deploy script resolves `~` using the SSH user's home directory. |
 | `BUDGET_DEPLOY_BRANCH` | `main` | Git branch pushed to GitHub and pulled on the Ubuntu machine. |
+| `BUDGET_DEPLOY_PASSWORD` | *(none)* | sudo password of the deploy account on the server, so `bin/deploy.ps1` asks no questions. Sent through SSH's input, never on a command line, and never copied to the server's `.env`. Leave it empty only if that account has passwordless sudo. |
 
 The `.env` file format is compatible with the included systemd `EnvironmentFile`. The systemd unit and Nginx site are infrastructure configuration, so they remain in `deploy/`; the app's runtime settings and deployment target are in `.env`.
 
@@ -63,7 +64,7 @@ Use the provided `deploy/budget.service` and `deploy/budget.nginx`. Production U
 
 1. On the Ubuntu machine, use the SSH account named in `BUDGET_DEPLOY_REMOTE`. Clone this repository to the location in `BUDGET_DEPLOY_REMOTE_ROOT` (the deploy script supports `~/...` paths). Create a Python virtual environment there and install `requirements.txt`. Keep the checkout owned by that SSH account.
 2. Set `BUDGET_DATABASE_PASSWORD` in the local `.env` to a unique secret of at least 16 characters. The deploy script sends a production copy of `.env` over SSH, preserving that password while setting server paths and security options. Do not commit `.env`.
-3. Configure the Ubuntu service account and sudo access. The provided systemd unit runs as the SSH user and uses their checkout. The deploy account must be able to run `sudo install` and `sudo systemctl` for the `budget` unit; the script opens a terminal (`ssh -t`) for that step, so sudo may prompt for a password once.
+3. Configure the Ubuntu service account and sudo access. The provided systemd unit runs as the SSH user and uses their checkout. The deploy account must be able to run `sudo install`, `sudo systemctl` and `sudo journalctl` for the `budget` unit; set its password in `BUDGET_DEPLOY_PASSWORD` (see above). The script checks sudo before committing anything.
 4. The deploy script creates the production configuration with:
 
    ```dotenv
@@ -77,7 +78,7 @@ Use the provided `deploy/budget.service` and `deploy/budget.nginx`. Production U
 
 5. Before the first deploy, create the initial administrator on the server: `cd ~/source/budget && .venv/bin/python . create-admin`.
 6. On the Ubuntu machine, issue the certificate with the webroot used by the shared port-80 site (`sudo certbot certonly --webroot -w /var/www/letsencrypt -d budget.slcti.ca`), add `budget.slcti.ca 127.0.0.1:8444;` to the stream map, copy `deploy/budget.nginx` to `/etc/nginx/sites-enabled/budget-ssl.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Do not use `certbot --nginx`: it would add a `listen 443` to the `http` block, which conflicts with the stream router and takes every site down. The deploy script never changes Nginx.
-7. On Windows, run `.\bin\deploy.ps1`. It stages and commits source files, pushes the configured Git branch to GitHub, securely transfers `.env`, pulls the pushed commit on the server, installs/restarts the systemd service, creates and verifies an encrypted production database backup, downloads it, backs up the old local database, and replaces the local database with the production copy. Stop the local app before deploying; the script checks the local port and refuses to overwrite a running database.
+7. On Windows, run `.\bin\deploy.ps1`. It asks no questions. It stages and commits source files, pushes the configured Git branch to GitHub, securely transfers `.env`, pulls the pushed commit on the server, installs/restarts the systemd service, creates and verifies an encrypted production database backup, downloads it, backs up the old local database, and replaces the local database with the production copy. Stop the local app before deploying; the script checks the local port and refuses to overwrite a running database.
 
 The deployment script requires SSH key access, a pre-existing remote Git checkout and virtual environment, and working GitHub authentication. The remote username, checkout path, and branch are read from `.env`. Remote and local encrypted database snapshots are retained in `data/backups`; prune old snapshots periodically. The script synchronizes local development data from production on every successful deployment, so local changes to the database are replaced (an encrypted pre-sync backup is kept).
 

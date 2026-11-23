@@ -459,10 +459,74 @@ def _migrate_dog_and_cat_into_pet(db: sqlite3.Connection) -> None:
     logger.info("Moved %d Dog/Cat expenses to %r and deleted categories %s", moved, pet_key, sources)
 
 
+def _same_name(name: str | None, target: str) -> bool:
+    return name is not None and unicodedata.normalize("NFC", name).strip().casefold() == target.casefold()
+
+
+def _recipient_values(db: sqlite3.Connection, target: str) -> list[str]:
+    """The stored spellings of the recipient `target` (case, spacing and Unicode form aside)."""
+    return [
+        row["transfer_to"]
+        for row in db.execute("SELECT DISTINCT transfer_to FROM expenses WHERE transfer_to IS NOT NULL")
+        if _same_name(row["transfer_to"], target)
+    ]
+
+
+def _clear_recipient(db: sqlite3.Connection, target: str) -> int:
+    """Clear the recipient `target` from every expense, then remove that household member if unused."""
+    cleared = sum(
+        db.execute("UPDATE expenses SET transfer_to = NULL WHERE transfer_to = ?", (name,)).rowcount
+        for name in _recipient_values(db, target)
+    )
+    for member in db.execute("SELECT id, name FROM household_members").fetchall():
+        if _same_name(member["name"], target) and not db.execute(
+            "SELECT 1 FROM expenses WHERE paid_by = ? OR transfer_to = ? LIMIT 1", (member["name"], member["name"])
+        ).fetchone():
+            db.execute("DELETE FROM household_members WHERE id = ?", (member["id"],))
+    logger.info("Cleared recipient %s from %d expenses", target, cleared)
+    return cleared
+
+
+def _migrate_remove_im_recipient(db: sqlite3.Connection) -> None:
+    """Clear the recipient « Î.-M. » from every expense, then remove that household member."""
+    _clear_recipient(db, "Î.-M.")
+
+
+def _migrate_succession_recipient_to_category(db: sqlite3.Connection) -> None:
+    """Move every expense whose recipient is « succession » to the Succession category, then clear that recipient."""
+    recipients = _recipient_values(db, "succession")
+    if not recipients:
+        return
+    category = db.execute(
+        """
+        SELECT category_key FROM categories
+        WHERE category_key = 'succession' OR lower(trim(name_fr)) = 'succession'
+        ORDER BY category_key = 'succession' DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if category:
+        category_key = category["category_key"]
+    else:
+        category_key = "succession"
+        db.execute(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            (category_key, "Inheritance", "Succession"),
+        )
+    moved = sum(
+        db.execute("UPDATE expenses SET category = ? WHERE transfer_to = ?", (category_key, name)).rowcount
+        for name in recipients
+    )
+    logger.info("Moved %d succession expenses to category %r", moved, category_key)
+    _clear_recipient(db, "succession")
+
+
 # Data migrations run once each, in order, at startup (and so on every deploy), inside the startup
 # transaction: a failure rolls the whole migration back. Never rename an applied migration.
 MIGRATIONS = (
     ("2026-11-23-merge-dog-and-cat-into-pet", _migrate_dog_and_cat_into_pet),
+    ("2026-11-23-remove-im-recipient", _migrate_remove_im_recipient),
+    ("2026-11-23-succession-recipient-to-category", _migrate_succession_recipient_to_category),
 )
 
 

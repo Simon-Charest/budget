@@ -4,8 +4,7 @@ const TEXT = {
   en: {
     navBudget: "Budget", navReport: "Report", navCategories: "Categories", navUsers: "Users", email: "Email address", password: "Password", signIn: "Sign in",
     overview: "YOUR FINANCES", budgetTitle: "Budget",
-    budgetSubtitle: "Every expense, all in one place.", year: "Year", month: "Month", category: "Category", payer: "Payer",
-    allMonths: "All months", allRecipients: "All recipients", selectMember: "Select a person", clearFilters: "Clear filters", filterOptionsFailed: "Filter options could not be loaded. Please reload the page.", actions: "Actions", addExpense: "Add expense", editExpense: "Edit expense",
+    budgetSubtitle: "Every expense, all in one place.", year: "Year", month: "Month", category: "Category", payer: "Payer", selectMember: "Select a person", clearFilters: "Clear filters", filterOptionsFailed: "Filter options could not be loaded. Please reload the page.", actions: "Actions", addExpense: "Add expense", editExpense: "Edit expense",
     deleteExpense: "Delete expense", addExpenseTooltip: "Add", editExpenseTooltip: "Edit", deleteExpenseTooltip: "Delete", confirmDeleteExpense: "Delete this expense?", saveExpense: "Save expense",
     categoryEnglish: "English name", addCategory: "Add category", editCategory: "Edit category",
     categoryFrench: "French name", manageCategories: "Manage categories", categoriesTitle: "Categories",
@@ -17,13 +16,12 @@ const TEXT = {
     filterDate: "Filter date", filterAmount: "Filter amount", filterCategory: "Filter category",
     filterMerchant: "Filter merchant", filterDescription: "Filter description", filterPayer: "Filter payer",
     filterRecipient: "Filter recipient", recipient: "Recipient",
-    noCategory: "No category", conflict: "An item with that name already exists.",
-    allYears: "All years", allCategories: "All categories", allPayers: "Everyone", totalSpent: "Total spent",
+    noCategory: "No category", conflict: "An item with that name already exists.", totalSpent: "Total spent",
     filteredTotal: "For the selected filters", transactions: "Transactions", matchingRecords: "Matching records",
     reportTitle: "Financial report", reportSubtitle: "A summary of your household spending.",
     averageExpense: "Average expense", perTransaction: "Per transaction", spendingBreakdown: "SPENDING BREAKDOWN",
     byCategory: "By category", recentActivity: "RECENT ACTIVITY", monthlySpending: "Monthly spending",
-    ledger: "THE LEDGER", search: "Search expenses", searchPlaceholder: "Search merchant or notes…", date: "Date",
+    ledger: "THE LEDGER", all: "All", search: "Search expenses", searchPlaceholder: "Search merchant or notes…", date: "Date",
     merchant: "Merchant", description: "Description", amount: "Amount", transferTo: "Recipient",
     noExpenses: "No expenses match these filters.",
     pageOf: "Page {page} of {pages} · {count} expenses", accountAccess: "PEOPLE", usersTitle: "Users",
@@ -49,8 +47,7 @@ const TEXT = {
     navBudget: "Budget", navReport: "Rapport", navCategories: "Catégories", navUsers: "Utilisateurs", email: "Adresse courriel", password: "Mot de passe",
     signIn: "Connexion",
     overview: "VOS FINANCES", budgetTitle: "Budget", budgetSubtitle: "Toutes vos dépenses, au même endroit.",
-    year: "Année", month: "Mois", category: "Catégorie", payer: "Payeur", allYears: "Toutes les années",
-    allMonths: "Tous les mois", allRecipients: "Tous les bénéficiaires", selectMember: "Sélectionner une personne", clearFilters: "Effacer les filtres", filterOptionsFailed: "Impossible de charger les filtres. Veuillez actualiser la page.", actions: "Actions", addExpense: "Ajouter une dépense", editExpense: "Modifier la dépense",
+    year: "Année", month: "Mois", category: "Catégorie", payer: "Payeur", selectMember: "Sélectionner une personne", clearFilters: "Effacer les filtres", filterOptionsFailed: "Impossible de charger les filtres. Veuillez actualiser la page.", actions: "Actions", addExpense: "Ajouter une dépense", editExpense: "Modifier la dépense",
     deleteExpense: "Supprimer la dépense", addExpenseTooltip: "Ajouter", editExpenseTooltip: "Modifier", deleteExpenseTooltip: "Supprimer", confirmDeleteExpense: "Supprimer cette dépense ?", saveExpense: "Enregistrer",
     categoryEnglish: "Nom anglais", addCategory: "Ajouter une catégorie", editCategory: "Modifier la catégorie",
     categoryFrench: "Nom français", manageCategories: "Gérer les catégories", categoriesTitle: "Catégories",
@@ -62,13 +59,12 @@ const TEXT = {
     filterDate: "Filtrer par date", filterAmount: "Filtrer par montant", filterCategory: "Filtrer par catégorie",
     filterMerchant: "Filtrer par commerçant", filterDescription: "Filtrer par description", filterPayer: "Filtrer par payeur",
     filterRecipient: "Filtrer par bénéficiaire", recipient: "Bénéficiaire",
-    noCategory: "Aucune catégorie", conflict: "Un élément portant ce nom existe déjà.",
-    allCategories: "Toutes les catégories", allPayers: "Tout le monde", totalSpent: "Total des dépenses",
+    noCategory: "Aucune catégorie", conflict: "Un élément portant ce nom existe déjà.", totalSpent: "Total des dépenses",
     reportTitle: "Rapport financier", reportSubtitle: "Un aperçu des dépenses du foyer.",
     filteredTotal: "Selon les filtres", transactions: "Transactions", matchingRecords: "Résultats correspondants",
     averageExpense: "Dépense moyenne", perTransaction: "Par transaction", spendingBreakdown: "RÉPARTITION DES DÉPENSES",
     byCategory: "Par catégorie", recentActivity: "ACTIVITÉ RÉCENTE", monthlySpending: "Dépenses mensuelles",
-    ledger: "LE GRAND LIVRE", search: "Rechercher des dépenses", searchPlaceholder: "Commerçant ou notes…", date: "Date",
+    ledger: "LE GRAND LIVRE", all: "Tout", search: "Rechercher des dépenses", searchPlaceholder: "Commerçant ou notes…", date: "Date",
     merchant: "Commerçant", description: "Description", amount: "Montant", transferTo: "Bénéficiaire",
     noExpenses: "Aucune dépense ne correspond aux filtres.",
     pageOf: "Page {page} sur {pages} · {count} dépenses", accountAccess: "PERSONNES", usersTitle: "Utilisateurs",
@@ -110,7 +106,15 @@ let editingCategoryKey = null;
 let editingUserId = null;
 let editingHouseholdMemberId = null;
 let editingPersonKind = null;
-let selectedMonth = null;
+// The month filter survives a page refresh (per tab); a new visit starts on the latest month
+const MONTH_STORAGE_KEY = "budget-month";
+let selectedMonth = sessionStorage.getItem(MONTH_STORAGE_KEY);
+
+function setSelectedMonth(value) {
+  selectedMonth = value || null;
+  if (selectedMonth) sessionStorage.setItem(MONTH_STORAGE_KEY, selectedMonth);
+  else sessionStorage.removeItem(MONTH_STORAGE_KEY);
+}
 
 function tr(key) { return TEXT[language][key] || key; }
 
@@ -226,29 +230,29 @@ function setView(name) {
 
 async function loadFilters() {
   const filters = await api("/api/filters");
-  selectedMonth = selectedMonth || filterValue("month") || filters.months[filters.months.length - 1] || "all";
+  const latestMonth = filters.months[filters.months.length - 1] || "all";
+  const month = selectedMonth || filterValue("month") || latestMonth;
+  // A remembered month that no longer has expenses falls back to the latest one
+  setSelectedMonth(month === "all" || filters.months.includes(month) ? month : latestMonth);
   document.querySelectorAll("[data-month-filter]").forEach((select) => {
-    select.replaceChildren(new Option(tr("allMonths"), "all"));
+    select.replaceChildren(new Option(tr("all"), "all"));
     filters.months.forEach((value) => select.add(new Option(value, value)));
-    select.value = selectedMonth === "all" || filters.months.includes(selectedMonth) ? selectedMonth : "all";
+    select.value = selectedMonth;
   });
-  if (!filters.months.includes(selectedMonth) && selectedMonth !== "all") {
-    selectedMonth = filters.months[filters.months.length - 1] || "all";
-  }
   for (const [key, values, placeholder] of [
-    ["year", filters.years, tr("allYears")],
-    ["category", filters.categories, tr("allCategories")],
-    ["payer", filters.payers, tr("allPayers")],
+    ["year", filters.years, tr("all")],
+    ["category", filters.categories, tr("all")],
+    ["payer", filters.payers, tr("all")],
   ]) {
     document.querySelectorAll(`[data-filter="${key}"]`).forEach((select) => {
       populateSelect(select, values, placeholder);
     });
   }
-  populateSelect($("#budget-payer-filter"), filters.payers, tr("allPayers"));
+  populateSelect($("#budget-payer-filter"), filters.payers, tr("all"));
   populateSelect(
     $("#budget-recipient-filter"),
     Array.isArray(filters.recipients) ? filters.recipients : [],
-    tr("allRecipients"),
+    tr("all"),
   );
 }
 
@@ -295,7 +299,7 @@ async function loadCategories() {
   const budgetCategory = $("#budget-category-filter");
   if (budgetCategory) {
     const selected = budgetCategory.value;
-    budgetCategory.replaceChildren(new Option(tr("allCategories"), ""));
+    budgetCategory.replaceChildren(new Option(tr("all"), ""));
     categories.forEach((item) => budgetCategory.add(
       new Option(categoryName(item.category_key), item.category_key),
     ));
@@ -307,7 +311,7 @@ async function loadCategories() {
   const reportCategory = $("#report-category-filter");
   if (reportCategory) {
     const selected = reportCategory.value;
-    reportCategory.replaceChildren(new Option(tr("allCategories"), ""));
+    reportCategory.replaceChildren(new Option(tr("all"), ""));
     categories.forEach((item) => reportCategory.add(new Option(categoryName(item.category_key), item.category_key)));
     if (categories.some((item) => item.category_key === selected)) reportCategory.value = selected;
   }
@@ -728,6 +732,7 @@ $("#logout-button").addEventListener("click", async () => {
   try {
     await api("/api/logout", { method: "POST" });
     currentUser = null;
+    setSelectedMonth(null);
     location.hash = "";
     setView("budget");
   } catch (error) { showError(error); }
@@ -822,7 +827,7 @@ $("#expense-form").addEventListener("submit", async (event) => {
   try {
     const url = editingExpenseId ? `/api/expenses/${editingExpenseId}` : "/api/expenses";
     await api(url, { method: editingExpenseId ? "PUT" : "POST", body: JSON.stringify(payload) });
-    selectedMonth = payload.spent_on.slice(0, 7);
+    setSelectedMonth(payload.spent_on.slice(0, 7));
     await loadFilters();
     $("#expense-dialog").close();
     await loadExpenses();
@@ -880,7 +885,7 @@ document.querySelectorAll("[data-filter]").forEach((select) => {
 });
 document.querySelectorAll("[data-month-filter]").forEach((select) => {
   select.addEventListener("change", () => {
-    selectedMonth = select.value;
+    setSelectedMonth(select.value);
     document.querySelectorAll("[data-month-filter]").forEach((peer) => { peer.value = select.value; });
     currentPage = 1;
     loadExpenses().catch(showError);
@@ -895,7 +900,7 @@ document.querySelectorAll("[data-search-field]").forEach((control) => {
 $("#clear-filters-button").addEventListener("click", () => {
   document.querySelectorAll("#budget-view [data-search-field]").forEach((control) => { control.value = ""; });
   $("#budget-month-filter").value = "all";
-  selectedMonth = "all";
+  setSelectedMonth("all");
   currentPage = 1;
   loadExpenses().catch(showError);
 });
