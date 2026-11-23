@@ -1,14 +1,16 @@
 [Unit]
-Description=Budget private web application
-After=network.target
+Description=Budget private web application (budget.slcti.ca)
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=scharest
 Group=scharest
-WorkingDirectory=%h/source/budget
-EnvironmentFile=%h/source/budget/.env
-ExecStart=%h/source/budget/.venv/bin/python %h/source/budget
+# Absolute paths: in a system unit, %h is root's home, not the User= home.
+WorkingDirectory=/home/scharest/source/budget
+EnvironmentFile=/home/scharest/source/budget/.env
+ExecStart=/home/scharest/source/budget/.venv/bin/python /home/scharest/source/budget
 Restart=on-failure
 RestartSec=3
 UMask=0077
@@ -16,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%h/source/budget/data
+ReadWritePaths=/home/scharest/source/budget/data
 
 [Install]
 WantedBy=multi-user.target

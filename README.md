@@ -1,22 +1,25 @@
 # Budget
 
-A private, English/French household-budget web app built with Python, FastAPI, and SQLite. The app focuses on expenses imported from the **Brut** (Budget) sheet. The workbook's Transfers and Salary sheets are intentionally not included yet; additional reporting, such as who owns what and who owes whom, can be added later.
+A private, multilingual household-budget web app built with Python, FastAPI, and SQLite. The app focuses on expenses and reporting.
 
 ## What it does
 
 - Requires sign-in before displaying any budget data or serving budget APIs.
-- Stores dated expenses in an encrypted local SQLite database. An Excel workbook can be used for an initial import.
+- Stores dated expenses in an encrypted local SQLite database.
 - Shows expense totals, averages, category and monthly summaries, and a searchable, paginated transaction table.
-- Filters transactions by year, category, and payer.
-- Includes an administrator-only Users page to create and remove accounts.
-- Provides English and French UI text, icon buttons, a custom favicon, a top navigation bar, and a footer.
+- Defaults to the latest available month, with an option to view all months; transactions are shown in ascending date order.
+- Filters each transaction column independently, sorts the budget by any data column in either direction, and supports adding, editing, and deleting expenses.
+- Includes an administrator-only Categories page with filterable, sortable English and French names; administrators can add, edit, and delete unused categories. Editing a category to match both names of another category merges the categories and preserves their expenses.
+- Keeps the navigation at the top and the footer at the bottom of the browser layout.
+- Includes one administrator-only People list for both sign-in accounts and household members without login credentials. Email, account type, and password are only used for people who need access. Payers and recipients are selected from this same list.
+- Provides multilingual UI text, icon buttons, a custom favicon, a top navigation bar, and a footer.
 
-The import includes date, amount, type/category, supplier, description, payer, transfer recipient, and comments. It accepts both numeric spreadsheet amounts and common comma/dot-formatted amounts. After import, the database is the source of truth; the workbook is not needed to run the app. User accounts and sessions are kept in SQLite.
+The data includes date, amount, category, merchant, description, payer, and recipient. Legacy comments are merged into the description with a semicolon. Midnight time suffixes (`00:00:00`) are removed from descriptions during import and entry. Dates are entered and shown as `yyyy-mm-dd`. Login accounts, household members without login access, translated categories, and sessions are kept in SQLite.
 
 ## Requirements
 
 - Python 3.10 or later
-- An existing encrypted database, or an Excel workbook for the initial import
+- An existing encrypted database
 
 ## Configure with `.env`
 
@@ -56,24 +59,24 @@ The first administrator is created by the interactive `create-admin` command. It
 
 ## Deploy to Ubuntu
 
-Use the provided `deploy/budget.service` and `deploy/budget.nginx`. Production Uvicorn listens only on `127.0.0.1:8000`; Nginx accepts public traffic on port 80/443 and proxies to it. Do not expose port 8000 directly to the internet.
+Use the provided `deploy/budget.service` and `deploy/budget.nginx`. Production Uvicorn listens only on `127.0.0.1:8001` (port 8000 belongs to PyCharting on the same server). Nginx owns ports 80 and 443 for every site on the machine: a `stream` block in `/etc/nginx/streams-enabled/slcti.conf` routes port 443 by SNI name (`www.slcti.ca` to `:3000`, `pycharting.slcti.ca` to `:8443`, `budget.slcti.ca` to `:8444`), and `deploy/budget.nginx` terminates TLS on `127.0.0.1:8444` and proxies to the app. Do not expose port 8001 directly to the internet.
 
 1. On the Ubuntu machine, use the SSH account named in `BUDGET_DEPLOY_REMOTE`. Clone this repository to the location in `BUDGET_DEPLOY_REMOTE_ROOT` (the deploy script supports `~/...` paths). Create a Python virtual environment there and install `requirements.txt`. Keep the checkout owned by that SSH account.
 2. Set `BUDGET_DATABASE_PASSWORD` in the local `.env` to a unique secret of at least 16 characters. The deploy script sends a production copy of `.env` over SSH, preserving that password while setting server paths and security options. Do not commit `.env`.
-3. Configure the Ubuntu service account and sudo access. The provided systemd unit runs as the SSH user and uses their checkout. The deploy account must be able to run the script's `sudo install` and `sudo systemctl` commands; interactive sudo may prompt during deployment.
+3. Configure the Ubuntu service account and sudo access. The provided systemd unit runs as the SSH user and uses their checkout. The deploy account must be able to run `sudo install` and `sudo systemctl` for the `budget` unit; the script opens a terminal (`ssh -t`) for that step, so sudo may prompt for a password once.
 4. The deploy script creates the production configuration with:
 
    ```dotenv
    BUDGET_DATABASE=~/source/budget/data/budget.sqlite3
    BUDGET_HOST=127.0.0.1
-   BUDGET_PORT=8000
+   BUDGET_PORT=8001
    BUDGET_COOKIE_SECURE=true
    BUDGET_PROXY_HEADERS=true
    BUDGET_FORWARDED_ALLOW_IPS=127.0.0.1
    ```
 
 5. Before the first deploy, create the initial administrator on the server: `cd ~/source/budget && .venv/bin/python . create-admin`.
-6. On the Ubuntu machine, install `deploy/budget.nginx` as an Nginx site for `budget.slcti.ca`, enable it, then configure HTTPS with Certbot: `sudo certbot --nginx -d budget.slcti.ca`.
+6. On the Ubuntu machine, issue the certificate with the webroot used by the shared port-80 site (`sudo certbot certonly --webroot -w /var/www/letsencrypt -d budget.slcti.ca`), add `budget.slcti.ca 127.0.0.1:8444;` to the stream map, copy `deploy/budget.nginx` to `/etc/nginx/sites-enabled/budget-ssl.conf`, then `sudo nginx -t && sudo systemctl reload nginx`. Do not use `certbot --nginx`: it would add a `listen 443` to the `http` block, which conflicts with the stream router and takes every site down. The deploy script never changes Nginx.
 7. On Windows, run `.\bin\deploy.ps1`. It stages and commits source files, pushes the configured Git branch to GitHub, securely transfers `.env`, pulls the pushed commit on the server, installs/restarts the systemd service, creates and verifies an encrypted production database backup, downloads it, backs up the old local database, and replaces the local database with the production copy. Stop the local app before deploying; the script checks the local port and refuses to overwrite a running database.
 
 The deployment script requires SSH key access, a pre-existing remote Git checkout and virtual environment, and working GitHub authentication. The remote username, checkout path, and branch are read from `.env`. Remote and local encrypted database snapshots are retained in `data/backups`; prune old snapshots periodically. The script synchronizes local development data from production on every successful deployment, so local changes to the database are replaced (an encrypted pre-sync backup is kept).
@@ -95,3 +98,10 @@ The provided systemd service binds Uvicorn only to localhost, trusts forwarded h
 python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
+
+## License
+- Distributed under the [MIT License](https://opensource.org/license/mit/). See [LICENSE.txt](./LICENSE.txt) for more information.
+
+## Contact
+- GitHub: [PyCharting](https://github.com/Simon-Charest/budget);
+- Email: [Simon Charest](mailto:simoncharest@gmail.com).

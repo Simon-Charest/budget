@@ -9,6 +9,7 @@ import re
 import secrets
 import sqlite3 as std_sqlite
 import tempfile
+import unicodedata
 from contextlib import asynccontextmanager, contextmanager
 from datetime import date, datetime, timedelta, timezone
 from getpass import getpass
@@ -188,6 +189,51 @@ def _value_text(value: Any) -> str | None:
     return result or None
 
 
+def _clean_description(value: str | None) -> str | None:
+    if not value:
+        return None
+    result = re.sub(r"\s*00:00:00\b", "", value).strip()
+    return result or None
+
+
+def _sync_household_members(db: sqlite3.Connection) -> None:
+    db.execute(
+        """
+        INSERT OR IGNORE INTO household_members (name)
+        SELECT DISTINCT trim(name)
+        FROM (
+            SELECT paid_by AS name FROM expenses
+            UNION ALL
+            SELECT transfer_to AS name FROM expenses
+            UNION ALL
+            SELECT first_name || ' ' || last_name AS name FROM users
+        )
+        WHERE name IS NOT NULL AND trim(name) <> ''
+        """
+    )
+    for column in ("paid_by", "transfer_to"):
+        db.execute(
+            f"""
+            UPDATE expenses
+            SET {column} = (
+                SELECT name FROM household_members
+                WHERE name = trim(expenses.{column}) COLLATE NOCASE
+                LIMIT 1
+            )
+            WHERE {column} IS NOT NULL AND trim({column}) <> ''
+            """
+        )
+
+
+def _merge_description(description: str | None, comments: str | None) -> str | None:
+    parts = []
+    for value in (description, comments):
+        cleaned = _clean_description(value)
+        if cleaned:
+            parts.append(cleaned)
+    return "; ".join(parts) or None
+
+
 def _parse_amount(value: Any, row_number: int) -> float:
     if isinstance(value, str):
         normalized = value.strip().replace("\u00a0", "").replace("\u202f", "").replace(" ", "")
@@ -239,8 +285,16 @@ def initialize_database() -> None:
                 supplier TEXT,
                 description TEXT,
                 paid_by TEXT,
-                transfer_to TEXT,
-                comments TEXT
+                transfer_to TEXT
+            );
+            CREATE TABLE IF NOT EXISTS categories (
+                category_key TEXT PRIMARY KEY,
+                name_en TEXT NOT NULL,
+                name_fr TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS household_members (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE
             );
             CREATE INDEX IF NOT EXISTS expenses_date ON expenses(spent_on);
             CREATE INDEX IF NOT EXISTS expenses_category ON expenses(category);
@@ -251,6 +305,29 @@ def initialize_database() -> None:
             );
             """
         )
+        expense_columns = {row["name"] for row in db.execute("PRAGMA table_info(expenses)")}
+        if "comments" in expense_columns:
+            db.execute(
+                """
+                UPDATE expenses
+                SET description = CASE
+                    WHEN description IS NULL OR trim(description) = '' THEN trim(comments)
+                    WHEN comments IS NULL OR trim(comments) = '' THEN description
+                    ELSE trim(description) || '; ' || trim(comments)
+                END
+                WHERE comments IS NOT NULL AND trim(comments) <> ''
+                """
+            )
+            db.execute("ALTER TABLE expenses DROP COLUMN comments")
+        db.execute(
+            """
+            INSERT OR IGNORE INTO categories (category_key, name_en, name_fr)
+            SELECT DISTINCT category, category, category
+            FROM expenses
+            WHERE category IS NOT NULL AND trim(category) <> ''
+            """
+        )
+        _sync_household_members(db)
         current = db.execute(
             "SELECT value FROM app_metadata WHERE key = 'workbook_sha256'"
         ).fetchone()
@@ -292,11 +369,14 @@ def initialize_database() -> None:
                 workbook.close()
                 raise
 
+            description = _merge_description(_value_text(values[4]), _value_text(values[7]))
             rows.append(
                 (
                     date_text,
                     amount,
-                    *(_value_text(value) for value in values[2:8]),
+                    *(_value_text(value) for value in values[2:4]),
+                    description,
+                    *(_value_text(value) for value in values[5:7]),
                 )
             )
         workbook.close()
@@ -305,11 +385,20 @@ def initialize_database() -> None:
         db.executemany(
             """
             INSERT INTO expenses
-                (spent_on, amount, category, supplier, description, paid_by, transfer_to, comments)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (spent_on, amount, category, supplier, description, paid_by, transfer_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
+        db.execute(
+            """
+            INSERT OR IGNORE INTO categories (category_key, name_en, name_fr)
+            SELECT DISTINCT category, category, category
+            FROM expenses
+            WHERE category IS NOT NULL AND trim(category) <> ''
+            """
+        )
+        _sync_household_members(db)
         db.execute(
             """
             INSERT INTO app_metadata (key, value) VALUES ('workbook_sha256', ?)
@@ -438,6 +527,34 @@ class UserInput(BaseModel):
     password: str = Field(min_length=PASSWORD_LENGTH, max_length=128)
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str = Field(min_length=1, max_length=100)
+    is_admin: bool = False
+
+
+class UserUpdateInput(BaseModel):
+    email: str = Field(max_length=254)
+    password: str | None = Field(default=None, min_length=PASSWORD_LENGTH, max_length=128)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    is_admin: bool
+
+
+class HouseholdMemberInput(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class ExpenseInput(BaseModel):
+    spent_on: date
+    amount: float = Field(allow_inf_nan=False)
+    category: str | None = Field(default=None, max_length=100)
+    supplier: str | None = Field(default=None, max_length=200)
+    description: str | None = Field(default=None, max_length=2500)
+    paid_by: str | None = Field(default=None, max_length=100)
+    transfer_to: str | None = Field(default=None, max_length=100)
+
+
+class CategoryInput(BaseModel):
+    name_en: str = Field(min_length=1, max_length=100)
+    name_fr: str = Field(min_length=1, max_length=100)
 
 
 app = FastAPI(title="Budget", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -447,6 +564,7 @@ app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; "
         "object-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; "
@@ -519,30 +637,163 @@ def logout(request: Request, response: Response) -> dict[str, str]:
 def filters(user: Annotated[dict[str, Any], Depends(require_user)]) -> dict[str, list[str]]:
     with connect() as db:
         years = db.execute("SELECT DISTINCT substr(spent_on, 1, 4) AS year FROM expenses ORDER BY year DESC")
+        months = db.execute("SELECT DISTINCT substr(spent_on, 1, 7) AS month FROM expenses ORDER BY month ASC")
         categories = db.execute(
             "SELECT DISTINCT category FROM expenses WHERE category IS NOT NULL ORDER BY category COLLATE NOCASE"
         )
         payers = db.execute(
             "SELECT DISTINCT paid_by FROM expenses WHERE paid_by IS NOT NULL ORDER BY paid_by COLLATE NOCASE"
         )
+        recipients = db.execute(
+            "SELECT DISTINCT transfer_to FROM expenses WHERE transfer_to IS NOT NULL ORDER BY transfer_to COLLATE NOCASE"
+        )
         return {
             "years": [row["year"] for row in years],
+            "months": [row["month"] for row in months],
             "categories": [row["category"] for row in categories],
             "payers": [row["paid_by"] for row in payers],
+            "recipients": [row["transfer_to"] for row in recipients],
         }
+
+
+@app.get("/api/categories")
+def categories(_: Annotated[dict[str, Any], Depends(require_user)]) -> list[dict[str, str]]:
+    with connect() as db:
+        rows = db.execute(
+            "SELECT category_key, name_en, name_fr FROM categories ORDER BY name_en COLLATE NOCASE"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/categories", status_code=201)
+def create_category(
+    data: CategoryInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, str]:
+    _check_same_origin(request)
+    name_en = data.name_en.strip()
+    name_fr = data.name_fr.strip()
+    if not name_en or not name_fr:
+        raise HTTPException(status_code=422, detail="Category names cannot be empty.")
+    normalized = unicodedata.normalize("NFKD", name_en.casefold())
+    ascii_name = normalized.encode("ascii", "ignore").decode("ascii")
+    category_key = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")
+    if not category_key:
+        raise HTTPException(status_code=422, detail="English category name must contain a letter or number.")
+    with connect() as db:
+        try:
+            db.execute(
+                "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+                (category_key, name_en, name_fr),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="A category with this English name already exists.") from exc
+    return {"category_key": category_key, "name_en": name_en, "name_fr": name_fr}
+
+
+@app.put("/api/categories/{category_key}")
+def update_category(
+    category_key: str,
+    data: CategoryInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, Any]:
+    _check_same_origin(request)
+    name_en = data.name_en.strip()
+    name_fr = data.name_fr.strip()
+    if not name_en or not name_fr:
+        raise HTTPException(status_code=422, detail="Category names cannot be empty.")
+
+    def normalized_name(name: str) -> str:
+        return " ".join(unicodedata.normalize("NFKC", name).casefold().split())
+
+    with connect() as db:
+        current = db.execute(
+            "SELECT category_key FROM categories WHERE category_key = ?", (category_key,)
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Category not found.")
+        normalized_names = (normalized_name(name_en), normalized_name(name_fr))
+        matches = db.execute(
+            "SELECT category_key, name_en, name_fr FROM categories WHERE category_key <> ?",
+            (category_key,),
+        ).fetchall()
+        duplicate = next(
+            (
+                row for row in matches
+                if (normalized_name(row["name_en"]), normalized_name(row["name_fr"])) == normalized_names
+            ),
+            None,
+        )
+        if duplicate:
+            db.execute(
+                "UPDATE expenses SET category = ? WHERE category = ?",
+                (duplicate["category_key"], category_key),
+            )
+            db.execute("DELETE FROM categories WHERE category_key = ?", (category_key,))
+            return {
+                "category_key": duplicate["category_key"],
+                "name_en": duplicate["name_en"],
+                "name_fr": duplicate["name_fr"],
+                "merged": True,
+            }
+        cursor = db.execute(
+            "UPDATE categories SET name_en = ?, name_fr = ? WHERE category_key = ?",
+            (name_en, name_fr, category_key),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Category not found.")
+    return {"category_key": category_key, "name_en": name_en, "name_fr": name_fr, "merged": False}
+
+
+@app.delete("/api/categories/{category_key}")
+def delete_category(
+    category_key: str,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, str]:
+    _check_same_origin(request)
+    with connect() as db:
+        if not db.execute("SELECT 1 FROM categories WHERE category_key = ?", (category_key,)).fetchone():
+            raise HTTPException(status_code=404, detail="Category not found.")
+        if db.execute("SELECT 1 FROM expenses WHERE category = ? LIMIT 1", (category_key,)).fetchone():
+            raise HTTPException(status_code=409, detail="This category is used by existing expenses.")
+        db.execute("DELETE FROM categories WHERE category_key = ?", (category_key,))
+    return {"ok": "true"}
 
 
 @app.get("/api/expenses")
 def expenses(
     user: Annotated[dict[str, Any], Depends(require_user)],
+    month: Annotated[str | None, Query(pattern=r"^(?:\d{4}-\d{2}|all)$")] = None,
     year: Annotated[str | None, Query(pattern=r"^\d{4}$")] = None,
     category: Annotated[str | None, Query(max_length=100)] = None,
     payer: Annotated[str | None, Query(max_length=100)] = None,
     search: Annotated[str | None, Query(max_length=200)] = None,
+    filter_date: Annotated[str | None, Query(max_length=10)] = None,
+    filter_amount: Annotated[str | None, Query(max_length=30)] = None,
+    filter_category: Annotated[str | None, Query(max_length=100)] = None,
+    filter_supplier: Annotated[str | None, Query(max_length=200)] = None,
+    filter_description: Annotated[str | None, Query(max_length=2500)] = None,
+    filter_paid_by: Annotated[str | None, Query(max_length=100)] = None,
+    filter_transfer_to: Annotated[str | None, Query(max_length=100)] = None,
     page: Annotated[int, Query(ge=1)] = 1,
+    sort_by: Annotated[str, Query(pattern=r"^(spent_on|supplier|category|amount|paid_by|transfer_to|description)$")] = "spent_on",
+    sort_dir: Annotated[str, Query(pattern=r"^(asc|desc)$")] = "asc",
+    category_language: Annotated[str, Query(pattern=r"^(en|fr)$")] = "en",
 ) -> dict[str, Any]:
     conditions: list[str] = []
     params: list[Any] = []
+    if month is None:
+        with connect() as db:
+            latest_month = db.execute("SELECT MAX(substr(spent_on, 1, 7)) AS month FROM expenses").fetchone()["month"]
+        if latest_month:
+            conditions.append("substr(spent_on, 1, 7) = ?")
+            params.append(latest_month)
+    elif month != "all":
+        conditions.append("substr(spent_on, 1, 7) = ?")
+        params.append(month)
     if year:
         conditions.append("substr(spent_on, 1, 4) = ?")
         params.append(year)
@@ -556,11 +807,48 @@ def expenses(
         escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         conditions.append(
             "(supplier LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' "
-            "OR comments LIKE ? ESCAPE '\\' OR category LIKE ? ESCAPE '\\')"
+            "OR category LIKE ? ESCAPE '\\')"
         )
-        params.extend([f"%{escaped}%"] * 4)
+        params.extend([f"%{escaped}%"] * 3)
+    for column, value in (
+        ("spent_on", filter_date),
+        ("supplier", filter_supplier),
+        ("description", filter_description),
+        ("paid_by", filter_paid_by),
+        ("transfer_to", filter_transfer_to),
+    ):
+        if value:
+            escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append(f"{column} LIKE ? ESCAPE '\\'")
+            params.append(f"%{escaped}%")
+    if filter_amount:
+        escaped = filter_amount.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        conditions.append(
+            "(CAST(amount AS TEXT) LIKE ? ESCAPE '\\' OR printf('%.2f', amount) LIKE ? ESCAPE '\\')"
+        )
+        params.extend([pattern, pattern])
+    if filter_category:
+        escaped = filter_category.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        conditions.append(
+            "(category LIKE ? ESCAPE '\\' OR EXISTS ("
+            "SELECT 1 FROM categories c WHERE c.category_key = expenses.category "
+            "AND (c.name_en LIKE ? ESCAPE '\\' OR c.name_fr LIKE ? ESCAPE '\\')))"
+        )
+        params.extend([pattern, pattern, pattern])
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
     page_size = 50
+    sort_columns = {
+        "spent_on": "expenses.spent_on",
+        "supplier": "expenses.supplier COLLATE NOCASE",
+        "category": f"categories.name_{category_language} COLLATE NOCASE",
+        "amount": "expenses.amount",
+        "paid_by": "expenses.paid_by COLLATE NOCASE",
+        "transfer_to": "expenses.transfer_to COLLATE NOCASE",
+        "description": "expenses.description COLLATE NOCASE",
+    }
+    sort_direction = sort_dir.upper()
 
     with connect() as db:
         summary = db.execute(
@@ -589,9 +877,12 @@ def expenses(
         ).fetchall()
         rows = db.execute(
             f"""
-            SELECT id, spent_on, amount, category, supplier, description, paid_by, transfer_to, comments
-            FROM expenses{where}
-            ORDER BY spent_on DESC, id DESC LIMIT ? OFFSET ?
+            SELECT expenses.id, expenses.spent_on, expenses.amount, expenses.category,
+                   expenses.supplier, expenses.description, expenses.paid_by, expenses.transfer_to
+            FROM expenses
+            LEFT JOIN categories ON categories.category_key = expenses.category{where}
+            ORDER BY {sort_columns[sort_by]} {sort_direction}, expenses.id ASC
+            LIMIT ? OFFSET ?
             """,
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
@@ -606,6 +897,103 @@ def expenses(
         "categories": [dict(row) for row in category_totals],
         "monthly": [dict(row) for row in reversed(monthly)],
     }
+
+
+def _expense_values(data: ExpenseInput) -> tuple[Any, ...]:
+    category = data.category.strip() if data.category else ""
+    return (
+        data.spent_on.isoformat(),
+        data.amount,
+        category or None,
+        *(value.strip() or None if value else None for value in (
+            data.supplier, _clean_description(data.description), data.paid_by, data.transfer_to
+        )),
+    )
+
+
+def _validate_expense_members(
+    db: sqlite3.Connection, values: tuple[Any, ...]
+) -> tuple[Any, ...]:
+    validated = list(values)
+    for index in (5, 6):
+        name = validated[index]
+        if name is None:
+            continue
+        member = db.execute(
+            "SELECT name FROM household_members WHERE name = ? COLLATE NOCASE", (name,)
+        ).fetchone()
+        if not member:
+            raise HTTPException(status_code=422, detail="Select a valid household member.")
+        validated[index] = member["name"]
+    return tuple(validated)
+
+
+@app.post("/api/expenses", status_code=201)
+def create_expense(
+    data: ExpenseInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_user)],
+) -> dict[str, int]:
+    _check_same_origin(request)
+    values = _expense_values(data)
+    with connect() as db:
+        values = _validate_expense_members(db, values)
+        if values[2] is not None and not db.execute(
+            "SELECT 1 FROM categories WHERE category_key = ?", (values[2],)
+        ).fetchone():
+            raise HTTPException(status_code=422, detail="Select a valid category.")
+        cursor = db.execute(
+            """
+            INSERT INTO expenses
+                (spent_on, amount, category, supplier, description, paid_by, transfer_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            values,
+        )
+    return {"id": cursor.lastrowid}
+
+
+@app.put("/api/expenses/{expense_id}")
+def update_expense(
+    expense_id: int,
+    data: ExpenseInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_user)],
+) -> dict[str, int]:
+    _check_same_origin(request)
+    values = _expense_values(data)
+    with connect() as db:
+        values = _validate_expense_members(db, values)
+        if values[2] is not None and not db.execute(
+            "SELECT 1 FROM categories WHERE category_key = ?", (values[2],)
+        ).fetchone():
+            raise HTTPException(status_code=422, detail="Select a valid category.")
+        cursor = db.execute(
+            """
+            UPDATE expenses
+            SET spent_on = ?, amount = ?, category = ?, supplier = ?, description = ?,
+                paid_by = ?, transfer_to = ?
+            WHERE id = ?
+            """,
+            (*values, expense_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Expense not found.")
+    return {"id": expense_id}
+
+
+@app.delete("/api/expenses/{expense_id}", status_code=204)
+def delete_expense(
+    expense_id: int,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_user)],
+) -> Response:
+    _check_same_origin(request)
+    with connect() as db:
+        cursor = db.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Expense not found.")
+    return Response(status_code=204)
 
 
 @app.get("/api/users")
@@ -624,8 +1012,98 @@ def add_user(
     _: Annotated[dict[str, Any], Depends(require_admin)],
 ) -> dict[str, int]:
     _check_same_origin(request)
-    user_id = create_user(data.email, data.password, data.first_name, data.last_name)
+    user_id = create_user(
+        data.email, data.password, data.first_name, data.last_name, is_admin=data.is_admin
+    )
+    with connect() as db:
+        db.execute(
+            "INSERT OR IGNORE INTO household_members (name) VALUES (?)",
+            (f"{data.first_name.strip()} {data.last_name.strip()}",),
+        )
     return {"id": user_id}
+
+
+@app.put("/api/users/{user_id}")
+def update_user(
+    user_id: int,
+    data: UserUpdateInput,
+    request: Request,
+    admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, str]:
+    _check_same_origin(request)
+    email = _validate_email(data.email)
+    first_name, last_name = data.first_name.strip(), data.last_name.strip()
+    if not first_name or not last_name:
+        raise HTTPException(status_code=422, detail="First and last names are required.")
+    with connect() as db:
+        target = db.execute(
+            "SELECT id, is_admin, first_name, last_name FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Account not found.")
+        if target["is_admin"] and not data.is_admin:
+            admin_count = db.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1").fetchone()[0]
+            if admin_count <= 1 or target["id"] == admin["id"]:
+                raise HTTPException(status_code=400, detail="The last administrator cannot be demoted.")
+        values: tuple[Any, ...]
+        if data.password:
+            _validate_password(data.password)
+            salt = secrets.token_bytes(16)
+            values = (
+                email, first_name, last_name, int(data.is_admin), salt,
+                _password_hash(data.password, salt), user_id,
+            )
+            query = """
+                UPDATE users
+                SET email = ?, first_name = ?, last_name = ?, is_admin = ?,
+                    password_salt = ?, password_hash = ?
+                WHERE id = ?
+            """
+        else:
+            values = (email, first_name, last_name, int(data.is_admin), user_id)
+            query = """
+                UPDATE users
+                SET email = ?, first_name = ?, last_name = ?, is_admin = ?
+                WHERE id = ?
+            """
+        try:
+            db.execute(query, values)
+            old_name = f"{target['first_name']} {target['last_name']}"
+            new_name = f"{first_name} {last_name}"
+            if old_name.casefold() != new_name.casefold():
+                db.execute(
+                    "UPDATE expenses SET paid_by = ? WHERE paid_by = ? COLLATE NOCASE",
+                    (new_name, old_name),
+                )
+                db.execute(
+                    "UPDATE expenses SET transfer_to = ? WHERE transfer_to = ? COLLATE NOCASE",
+                    (new_name, old_name),
+                )
+                existing_member = db.execute(
+                    "SELECT id FROM household_members WHERE name = ? COLLATE NOCASE",
+                    (old_name,),
+                ).fetchone()
+                if existing_member:
+                    duplicate = db.execute(
+                        "SELECT id FROM household_members WHERE name = ? COLLATE NOCASE",
+                        (new_name,),
+                    ).fetchone()
+                    if duplicate:
+                        db.execute(
+                            "DELETE FROM household_members WHERE id = ?", (existing_member["id"],)
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE household_members SET name = ? WHERE id = ?",
+                            (new_name, existing_member["id"]),
+                        )
+                else:
+                    db.execute(
+                        "INSERT OR IGNORE INTO household_members (name) VALUES (?)", (new_name,)
+                    )
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="An account with that email already exists.") from exc
+    return {"ok": "true"}
 
 
 @app.delete("/api/users/{user_id}")
@@ -644,6 +1122,104 @@ def remove_user(
         if target["is_admin"] and db.execute("SELECT COUNT(*) FROM users WHERE is_admin = 1").fetchone()[0] <= 1:
             raise HTTPException(status_code=400, detail="The last administrator cannot be removed.")
         db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return {"ok": "true"}
+
+
+@app.get("/api/household-members")
+def household_members(_: Annotated[dict[str, Any], Depends(require_user)]) -> list[dict[str, Any]]:
+    with connect() as db:
+        _sync_household_members(db)
+        rows = db.execute("SELECT id, name FROM household_members ORDER BY name COLLATE NOCASE")
+        return [dict(row) for row in rows]
+
+
+@app.post("/api/household-members", status_code=201)
+def add_household_member(
+    data: HouseholdMemberInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, Any]:
+    _check_same_origin(request)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="A name is required.")
+    with connect() as db:
+        try:
+            cursor = db.execute("INSERT INTO household_members (name) VALUES (?)", (name,))
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="A household member with that name already exists.") from exc
+    return {"id": cursor.lastrowid, "name": name}
+
+
+@app.put("/api/household-members/{member_id}")
+def update_household_member(
+    member_id: int,
+    data: HouseholdMemberInput,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, Any]:
+    _check_same_origin(request)
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="A name is required.")
+    with connect() as db:
+        current = db.execute(
+            "SELECT name FROM household_members WHERE id = ?", (member_id,)
+        ).fetchone()
+        if not current:
+            raise HTTPException(status_code=404, detail="Household member not found.")
+        duplicate = db.execute(
+            """
+            SELECT id, name FROM household_members
+            WHERE name = ? COLLATE NOCASE AND id <> ?
+            """,
+            (name, member_id),
+        ).fetchone()
+        try:
+            if duplicate:
+                db.execute(
+                    "UPDATE expenses SET paid_by = ? WHERE paid_by = ? COLLATE NOCASE",
+                    (duplicate["name"], current["name"]),
+                )
+                db.execute(
+                    "UPDATE expenses SET transfer_to = ? WHERE transfer_to = ? COLLATE NOCASE",
+                    (duplicate["name"], current["name"]),
+                )
+                db.execute("DELETE FROM household_members WHERE id = ?", (member_id,))
+                return {"id": duplicate["id"], "name": duplicate["name"], "merged": True}
+            db.execute(
+                "UPDATE expenses SET paid_by = ? WHERE paid_by = ? COLLATE NOCASE",
+                (name, current["name"]),
+            )
+            db.execute(
+                "UPDATE expenses SET transfer_to = ? WHERE transfer_to = ? COLLATE NOCASE",
+                (name, current["name"]),
+            )
+            db.execute("UPDATE household_members SET name = ? WHERE id = ?", (name, member_id))
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="A household member with that name already exists.") from exc
+    return {"id": member_id, "name": name, "merged": False}
+
+
+@app.delete("/api/household-members/{member_id}")
+def remove_household_member(
+    member_id: int,
+    request: Request,
+    _: Annotated[dict[str, Any], Depends(require_admin)],
+) -> dict[str, str]:
+    _check_same_origin(request)
+    with connect() as db:
+        member = db.execute(
+            "SELECT name FROM household_members WHERE id = ?", (member_id,)
+        ).fetchone()
+        if not member:
+            raise HTTPException(status_code=404, detail="Household member not found.")
+        if db.execute(
+            "SELECT 1 FROM expenses WHERE paid_by = ? COLLATE NOCASE OR transfer_to = ? COLLATE NOCASE LIMIT 1",
+            (member["name"], member["name"]),
+        ).fetchone():
+            raise HTTPException(status_code=409, detail="This household member is used by existing expenses.")
+        db.execute("DELETE FROM household_members WHERE id = ?", (member_id,))
     return {"ok": "true"}
 
 

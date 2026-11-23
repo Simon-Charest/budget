@@ -20,6 +20,18 @@ $LocalRemoteBackup = $null
 $LocalOldBackup = $null
 $RemoteTransfer = $null
 
+function Invoke-Quietly {
+    # Windows PowerShell 5.1 turns redirected native stderr into a terminating error under
+    # $ErrorActionPreference = 'Stop'; callers inspect $LASTEXITCODE instead.
+    param(
+        [Parameter(Mandatory = $true)][string]$Executable,
+        [Parameter(Mandatory = $true)][string[]]$Arguments
+    )
+
+    $ErrorActionPreference = 'Continue'
+    & $Executable @Arguments *> $null
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$Executable,
@@ -29,7 +41,7 @@ function Invoke-Checked {
     )
 
     if ($Quiet) {
-        & $Executable @Arguments *> $null
+        Invoke-Quietly -Executable $Executable -Arguments $Arguments
     } else {
         & $Executable @Arguments
     }
@@ -118,7 +130,7 @@ function New-ProductionEnvFile {
     $productionValues = [ordered]@{
         BUDGET_DATABASE = "$RemoteRoot/data/budget.sqlite3"
         BUDGET_HOST = '127.0.0.1'
-        BUDGET_PORT = '8000'
+        BUDGET_PORT = '8001'
         BUDGET_COOKIE_SECURE = 'true'
         BUDGET_PROXY_HEADERS = 'true'
         BUDGET_FORWARDED_ALLOW_IPS = '127.0.0.1'
@@ -173,8 +185,8 @@ try {
     }
 
     Write-Output "Checking SSH access to $Remote..."
-    Invoke-Checked -Executable $Ssh -Arguments @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', $Remote, 'true') -Operation 'SSH connection'
-    $RemoteHome = (& $Ssh -o BatchMode=yes $Remote 'printf %s "$HOME"').Trim()
+    Invoke-Checked -Executable $Ssh -Arguments @('-n', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', $Remote, 'true') -Operation 'SSH connection'
+    $RemoteHome = (& $Ssh -n -o BatchMode=yes $Remote 'printf %s "$HOME"').Trim()
     if ($LASTEXITCODE -ne 0 -or $RemoteHome -notmatch '^/[A-Za-z0-9._/-]+$') {
         throw 'Could not safely resolve the remote home directory.'
     }
@@ -227,17 +239,17 @@ try {
     } elseif ($LASTEXITCODE -ne 0) {
         throw 'Could not inspect staged Git changes.'
     }
-    & $Git -C $ProjectRoot ls-files --error-unmatch '.env' *> $null
+    Invoke-Quietly -Executable $Git -Arguments @('-C', $ProjectRoot, 'ls-files', '--error-unmatch', '.env')
     if ($LASTEXITCODE -eq 0) {
         throw '.env is already tracked by Git. Remove it from tracking before deployment; do not publish secrets.'
     }
-    & $Git -C $ProjectRoot ls-files --error-unmatch 'data/budget.sqlite3' *> $null
+    Invoke-Quietly -Executable $Git -Arguments @('-C', $ProjectRoot, 'ls-files', '--error-unmatch', 'data/budget.sqlite3')
     if ($LASTEXITCODE -eq 0) {
         throw 'The local database is tracked by Git. Remove it from tracking before deployment.'
     }
 
     $remoteRepoCheck = "test -d '$RemoteRoot/.git' && test -x '$RemoteRoot/.venv/bin/python'"
-    Invoke-Checked -Executable $Ssh -Arguments @($Remote, $remoteRepoCheck) -Operation 'Remote deployment directory check'
+    Invoke-Checked -Executable $Ssh -Arguments @('-n', $Remote, $remoteRepoCheck) -Operation 'Remote deployment directory check'
 
     if (-not $PSCmdlet.ShouldProcess(
         "$RemoteRoot on $Remote",
@@ -269,18 +281,18 @@ try {
 
     Write-Output 'Installing the production .env with HTTPS and server path overrides...'
     Invoke-Checked -Executable $Scp -Arguments @('-o', 'BatchMode=yes', $TempEnv, "${Remote}:$RemoteEnvStage") -Operation 'Upload production .env'
-    $installEnv = "chmod 600 '$RemoteEnvStage' && sudo install -o '$RemoteUser' -g '$RemoteUser' -m 600 '$RemoteEnvStage' '$RemoteRoot/.env' && rm -f '$RemoteEnvStage'"
-    Invoke-Checked -Executable $Ssh -Arguments @($Remote, $installEnv) -Operation 'Install production .env'
+    $installEnv = "chmod 600 '$RemoteEnvStage' && install -m 600 '$RemoteEnvStage' '$RemoteRoot/.env' && rm -f '$RemoteEnvStage' && mkdir -m 700 -p '$RemoteRoot/data/backups'"
+    Invoke-Checked -Executable $Ssh -Arguments @('-n', $Remote, $installEnv) -Operation 'Install production .env'
 
     $remoteDatabase = "$RemoteRoot/data/budget.sqlite3"
     $remoteHasDatabase = "test -f '$remoteDatabase'"
-    & $Ssh $Remote $remoteHasDatabase *> $null
+    Invoke-Quietly -Executable $Ssh -Arguments @('-n', $Remote, $remoteHasDatabase)
     if ($LASTEXITCODE -ne 0) {
         Write-Output 'Initializing the server database from the encrypted local database snapshot...'
         $RemoteDatabaseStage = "$RemoteRoot/.budget-initial-$stamp.sqlite3"
         Invoke-Checked -Executable $Scp -Arguments @('-o', 'BatchMode=yes', $LocalInitialBackup, "${Remote}:$RemoteDatabaseStage") -Operation 'Upload initial encrypted database'
-        $installDatabase = "sudo install -o '$RemoteUser' -g '$RemoteUser' -m 600 '$RemoteDatabaseStage' '$remoteDatabase' && rm -f '$RemoteDatabaseStage'"
-        Invoke-Checked -Executable $Ssh -Arguments @($Remote, $installDatabase) -Operation 'Install initial database'
+        $installDatabase = "install -m 600 '$RemoteDatabaseStage' '$remoteDatabase' && rm -f '$RemoteDatabaseStage'"
+        Invoke-Checked -Executable $Ssh -Arguments @('-n', $Remote, $installDatabase) -Operation 'Install initial database'
     }
 
     Write-Output 'Pulling the pushed commit and restarting the production service...'
@@ -294,18 +306,19 @@ try {
         'sudo systemctl daemon-reload',
         'sudo systemctl enable budget',
         'sudo systemctl restart budget',
+        'sleep 3',
         'sudo systemctl is-active --quiet budget',
-        "mkdir -m 700 -p '$RemoteRoot/data/backups'",
         ".venv/bin/python . backup-database '$remoteBackup'",
         ".venv/bin/python . verify-database '$remoteBackup'",
         "chmod 600 '$remoteBackup'",
-        "sudo install -o '$RemoteUser' -g '$RemoteUser' -m 600 '$remoteBackup' '$remoteTransfer'"
+        "install -m 600 '$remoteBackup' '$remoteTransfer'"
     ) -join ' && '
-    Invoke-Checked -Executable $Ssh -Arguments @($Remote, $deployCommand) -Operation 'Production deployment and encrypted database backup'
+    # -t: the server's sudo asks for a password, which needs a terminal.
+    Invoke-Checked -Executable $Ssh -Arguments @('-t', $Remote, $deployCommand) -Operation 'Production deployment and encrypted database backup'
 
     Write-Output 'Downloading the encrypted production database...'
     Invoke-Checked -Executable $Scp -Arguments @('-o', 'BatchMode=yes', "${Remote}:$remoteTransfer", $LocalRemoteBackup) -Operation 'Download production database backup'
-    Invoke-Checked -Executable $Ssh -Arguments @($Remote, "rm -f '$remoteTransfer'") -Operation 'Remove temporary remote transfer copy'
+    Invoke-Checked -Executable $Ssh -Arguments @('-n', $Remote, "rm -f '$remoteTransfer'") -Operation 'Remove temporary remote transfer copy'
     Invoke-Checked -Executable $Python -Arguments @('.', 'verify-database', $LocalRemoteBackup) -Operation 'Downloaded database verification'
 
     if (Test-Path -LiteralPath $localDatabase -PathType Leaf) {
@@ -339,12 +352,12 @@ try {
         Remove-Item -LiteralPath $TempEnv -Force
     }
     if ($RemoteTransfer) {
-        & $Ssh -o BatchMode=yes $Remote "rm -f '$RemoteTransfer'" *> $null
+        Invoke-Quietly -Executable $Ssh -Arguments @('-n', '-o', 'BatchMode=yes', $Remote, "rm -f '$RemoteTransfer'")
     }
     if ($RemoteEnvStage) {
-        & $Ssh -o BatchMode=yes $Remote "rm -f '$RemoteEnvStage'" *> $null
+        Invoke-Quietly -Executable $Ssh -Arguments @('-n', '-o', 'BatchMode=yes', $Remote, "rm -f '$RemoteEnvStage'")
     }
     if ($RemoteDatabaseStage) {
-        & $Ssh -o BatchMode=yes $Remote "rm -f '$RemoteDatabaseStage'" *> $null
+        Invoke-Quietly -Executable $Ssh -Arguments @('-n', '-o', 'BatchMode=yes', $Remote, "rm -f '$RemoteDatabaseStage'")
     }
 }
