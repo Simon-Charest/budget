@@ -332,6 +332,7 @@ def initialize_database() -> None:
             "SELECT value FROM app_metadata WHERE key = 'workbook_sha256'"
         ).fetchone()
         if current and (fingerprint is None or current["value"] == fingerprint):
+            _apply_migrations(db)
             return
 
         if fingerprint is None:
@@ -407,6 +408,75 @@ def initialize_database() -> None:
             (fingerprint,),
         )
         logger.info("Imported %d rows from the workbook's Brut sheet", len(rows))
+        # A re-import replaces every expense, so the data migrations apply again to the new rows.
+        db.execute("DELETE FROM app_metadata WHERE key LIKE 'migration:%'")
+        _apply_migrations(db)
+
+
+def _migrate_dog_and_cat_into_pet(db: sqlite3.Connection) -> None:
+    """Move every Dog or Cat expense to a Pet category, then delete Dog and Cat."""
+    sources = [
+        row["category_key"]
+        for row in db.execute(
+            """
+            SELECT category_key FROM categories
+            WHERE lower(category_key) IN ('dog', 'cat') OR lower(trim(name_en)) IN ('dog', 'cat')
+            """
+        )
+    ]
+    orphaned = db.execute(
+        "SELECT 1 FROM expenses WHERE lower(trim(category)) IN ('dog', 'cat') LIMIT 1"
+    ).fetchone()
+    if not sources and not orphaned:
+        return
+
+    pet = db.execute(
+        """
+        SELECT category_key FROM categories
+        WHERE category_key = 'pet' OR lower(trim(name_en)) = 'pet'
+        ORDER BY category_key = 'pet' DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if pet:
+        pet_key = pet["category_key"]
+    else:
+        pet_key = "pet"
+        db.execute(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            (pet_key, "Pet", "Animal de compagnie"),
+        )
+
+    placeholders = ", ".join("?" for _ in sources) or "NULL"
+    moved = db.execute(
+        f"""
+        UPDATE expenses SET category = ?
+        WHERE category IN ({placeholders}) OR lower(trim(category)) IN ('dog', 'cat')
+        """,
+        (pet_key, *sources),
+    ).rowcount
+    db.execute(f"DELETE FROM categories WHERE category_key IN ({placeholders})", sources)
+    logger.info("Moved %d Dog/Cat expenses to %r and deleted categories %s", moved, pet_key, sources)
+
+
+# Data migrations run once each, in order, at startup (and so on every deploy), inside the startup
+# transaction: a failure rolls the whole migration back. Never rename an applied migration.
+MIGRATIONS = (
+    ("2026-11-23-merge-dog-and-cat-into-pet", _migrate_dog_and_cat_into_pet),
+)
+
+
+def _apply_migrations(db: sqlite3.Connection) -> None:
+    for name, migrate in MIGRATIONS:
+        key = f"migration:{name}"
+        if db.execute("SELECT 1 FROM app_metadata WHERE key = ?", (key,)).fetchone():
+            continue
+        migrate(db)
+        db.execute(
+            "INSERT INTO app_metadata (key, value) VALUES (?, ?)",
+            (key, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        logger.info("Applied database migration %s", name)
 
 
 def _password_hash(password: str, salt: bytes) -> bytes:

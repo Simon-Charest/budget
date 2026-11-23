@@ -553,3 +553,31 @@ def test_expense_month_filters_sorting_and_crud(monkeypatch, tmp_path):
         f"/api/household-members/{duplicate_member.json()['id']}", headers=headers
     ).status_code == 200
     client.close()
+
+
+def test_dog_and_cat_expenses_are_merged_into_pet_once(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        # A database from before the migration: Dog and Cat in use, no Pet category
+        db.execute("DELETE FROM app_metadata WHERE key LIKE 'migration:%'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [("dog", "Dog", "Chien"), ("cat", "Cat", "Chat")],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category) VALUES (?, ?, ?)",
+            [("2025-02-01", 40.0, "dog"), ("2025-02-02", 15.0, "cat"), ("2025-02-03", 3.0, "Dog")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        categories = {row["category_key"]: tuple(row)[1:] for row in db.execute("SELECT * FROM categories")}
+        assert "dog" not in categories and "cat" not in categories
+        assert categories["pet"] == ("Pet", "Animal de compagnie")
+        assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'pet'").fetchone()[:] == (3, 58.0)
+        assert db.execute("SELECT COUNT(*) FROM expenses WHERE category IN ('food', 'coffee')").fetchone()[0] == 2
+        # Applied once: a Dog category created later is kept
+        db.execute("INSERT INTO categories (category_key, name_en, name_fr) VALUES ('dog', 'Dog', 'Chien')")
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        assert db.execute("SELECT 1 FROM categories WHERE category_key = 'dog'").fetchone()
+    client.close()

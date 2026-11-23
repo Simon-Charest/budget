@@ -306,7 +306,8 @@ try {
         'sudo systemctl daemon-reload',
         'sudo systemctl enable budget',
         'sudo systemctl restart budget',
-        'sleep 3',
+        # Uvicorn answers only after startup, which applies the database migrations, so the backup below includes them
+        '{ up=0; for i in $(seq 1 30); do if curl -s -o /dev/null --max-time 2 http://127.0.0.1:8001/api/me; then up=1; break; fi; sleep 1; done; [ $up = 1 ] || { echo The budget service did not answer on 127.0.0.1:8001; sudo journalctl -u budget -n 30 --no-pager; false; }; }',
         'sudo systemctl is-active --quiet budget',
         ".venv/bin/python . backup-database '$remoteBackup'",
         ".venv/bin/python . verify-database '$remoteBackup'",
