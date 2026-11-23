@@ -487,6 +487,53 @@ def _clear_recipient(db: sqlite3.Connection, target: str) -> int:
     return cleared
 
 
+def _merge_person(db: sqlite3.Connection, source: str, target: str) -> int:
+    """Replace the person `source` with `target` as payer and recipient, then remove `source` if unused.
+
+    Also renames: `target` is created when it does not exist yet. Does nothing when `source` is absent.
+    """
+    names = {
+        column: [
+            row["name"]
+            for row in db.execute(f"SELECT DISTINCT {column} AS name FROM expenses WHERE {column} IS NOT NULL")
+            if _same_name(row["name"], source)
+        ]
+        for column in ("paid_by", "transfer_to")
+    }
+    source_members = [
+        member for member in db.execute("SELECT id, name FROM household_members").fetchall()
+        if _same_name(member["name"], source)
+    ]
+    if not source_members and not any(names.values()):
+        return 0
+    # The name column compares without case, so this also finds « slcti » for « SLCTI »
+    if not db.execute("SELECT 1 FROM household_members WHERE name = ?", (target,)).fetchone():
+        db.execute("INSERT INTO household_members (name) VALUES (?)", (target,))
+    merged = 0
+    for column, values in names.items():
+        merged += sum(
+            db.execute(f"UPDATE expenses SET {column} = ? WHERE {column} = ?", (target, name)).rowcount
+            for name in values
+        )
+    for member in db.execute("SELECT id, name FROM household_members").fetchall():
+        if _same_name(member["name"], source) and not db.execute(
+            "SELECT 1 FROM expenses WHERE paid_by = ? OR transfer_to = ? LIMIT 1", (member["name"], member["name"])
+        ).fetchone():
+            db.execute("DELETE FROM household_members WHERE id = ?", (member["id"],))
+    logger.info("Merged person %s into %s on %d expense fields", source, target, merged)
+    return merged
+
+
+def _migrate_merge_conjointe_into_conjoint(db: sqlite3.Connection) -> None:
+    """Merge the person « conjointe » into « conjoint » (payer and recipient)."""
+    _merge_person(db, "conjointe", "conjoint")
+
+
+def _migrate_rename_entreprise_to_slcti(db: sqlite3.Connection) -> None:
+    """Rename the person « entreprise » to « SLCTI » (payer and recipient)."""
+    _merge_person(db, "entreprise", "SLCTI")
+
+
 def _migrate_remove_im_recipient(db: sqlite3.Connection) -> None:
     """Clear the recipient « Î.-M. » from every expense, then remove that household member."""
     _clear_recipient(db, "Î.-M.")
@@ -527,6 +574,8 @@ MIGRATIONS = (
     ("2026-11-23-merge-dog-and-cat-into-pet", _migrate_dog_and_cat_into_pet),
     ("2026-11-23-remove-im-recipient", _migrate_remove_im_recipient),
     ("2026-11-23-succession-recipient-to-category", _migrate_succession_recipient_to_category),
+    ("2026-11-23-merge-conjointe-into-conjoint", _migrate_merge_conjointe_into_conjoint),
+    ("2026-11-23-rename-entreprise-to-slcti", _migrate_rename_entreprise_to_slcti),
 )
 
 

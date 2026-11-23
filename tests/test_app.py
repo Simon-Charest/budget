@@ -630,3 +630,62 @@ def test_succession_recipient_becomes_succession_category(monkeypatch, tmp_path)
         )
         assert not db.execute("SELECT 1 FROM household_members WHERE name = 'succession'").fetchone()
     client.close()
+
+
+def test_conjointe_is_merged_into_conjoint(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-23-merge-conjointe-into-conjoint'")
+        db.executemany("INSERT INTO household_members (name) VALUES (?)", [("conjoint",), ("conjointe",)])
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, paid_by, transfer_to, description) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("2025-05-01", 10.0, "Sam", "conjointe", "Cadeau pour la conjointe"),
+                ("2025-05-02", 20.0, "Conjointe", "Sam", None),
+                ("2025-05-03", 30.0, "Sam", "conjoint", None),
+            ],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        rows = [tuple(row) for row in db.execute(
+            "SELECT paid_by, transfer_to, description FROM expenses WHERE spent_on LIKE '2025-05-%' ORDER BY spent_on"
+        )]
+        assert rows == [
+            ("Sam", "conjoint", "Cadeau pour la conjointe"),
+            ("conjoint", "Sam", None),
+            ("Sam", "conjoint", None),
+        ]
+        names = {row["name"] for row in db.execute("SELECT name FROM household_members")}
+        assert "conjoint" in names and "conjointe" not in names
+    client.close()
+
+
+def test_entreprise_person_is_renamed_slcti_and_category_is_kept(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-23-rename-entreprise-to-slcti'")
+        db.execute("INSERT INTO household_members (name) VALUES ('entreprise')")
+        db.execute("INSERT INTO categories (category_key, name_en, name_fr) VALUES ('entreprise', 'Business', 'Entreprise')")
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category, paid_by, transfer_to) VALUES (?, ?, ?, ?, ?)",
+            [("2025-06-01", 10.0, "entreprise", "Sam", "entreprise"), ("2025-06-02", 20.0, None, "entreprise", "Sam")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        rows = [tuple(row) for row in db.execute(
+            "SELECT category, paid_by, transfer_to FROM expenses WHERE spent_on LIKE '2025-06-%' ORDER BY spent_on"
+        )]
+        assert rows == [("entreprise", "Sam", "SLCTI"), (None, "SLCTI", "Sam")]
+        names = {row["name"] for row in db.execute("SELECT name FROM household_members")}
+        assert "SLCTI" in names and "entreprise" not in names
+        assert db.execute("SELECT 1 FROM categories WHERE category_key = 'entreprise'").fetchone()
+    client.close()
+
+
+def test_merge_person_does_nothing_without_the_source(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        before = {row["name"] for row in db.execute("SELECT name FROM household_members")}
+        assert budget_app._merge_person(db, "nobody", "SLCTI") == 0
+        assert {row["name"] for row in db.execute("SELECT name FROM household_members")} == before
+    client.close()
