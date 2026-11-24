@@ -487,6 +487,64 @@ def _clear_recipient(db: sqlite3.Connection, target: str) -> int:
     return cleared
 
 
+def _merge_categories(
+    db: sqlite3.Connection, sources: tuple[str, ...], target_key: str, name_en: str, name_fr: str
+) -> int:
+    """Move every expense of the `sources` categories (keys or English names) to `target_key`, then delete them.
+
+    The target is created with `name_en` / `name_fr` when no category has that key or English name.
+    Does nothing when no source category or expense exists.
+    """
+    wanted = {source.casefold() for source in sources}
+    source_keys = [
+        row["category_key"]
+        for row in db.execute("SELECT category_key, name_en FROM categories").fetchall()
+        if row["category_key"].casefold() in wanted or row["name_en"].strip().casefold() in wanted
+    ]
+    orphan_keys = [
+        row["category"]
+        for row in db.execute("SELECT DISTINCT category FROM expenses WHERE category IS NOT NULL").fetchall()
+        if row["category"].strip().casefold() in wanted
+    ]
+    keys = sorted(set(source_keys) | set(orphan_keys))
+    if not keys:
+        return 0
+    target = db.execute(
+        """
+        SELECT category_key FROM categories
+        WHERE category_key = ? OR lower(trim(name_en)) = lower(?)
+        ORDER BY category_key = ? DESC
+        LIMIT 1
+        """,
+        (target_key, name_en, target_key),
+    ).fetchone()
+    if target:
+        target_key = target["category_key"]
+    else:
+        db.execute(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            (target_key, name_en, name_fr),
+        )
+    keys = [key for key in keys if key != target_key]
+    placeholders = ", ".join("?" for _ in keys) or "NULL"
+    moved = db.execute(
+        f"UPDATE expenses SET category = ? WHERE category IN ({placeholders})", (target_key, *keys)
+    ).rowcount
+    db.execute(f"DELETE FROM categories WHERE category_key IN ({placeholders})", keys)
+    logger.info("Moved %d expenses from categories %s to %r and deleted them", moved, keys, target_key)
+    return moved
+
+
+def _migrate_bus_and_transportation_into_transit(db: sqlite3.Connection) -> None:
+    """Move every Bus or Transportation expense to a new Transit category, then delete those two."""
+    _merge_categories(db, ("bus", "transport", "transportation"), "transit", "Transit", "Transport en commun")
+
+
+def _migrate_medication_into_health(db: sqlite3.Connection) -> None:
+    """Move every Medication expense to the Health category, then delete Medication."""
+    _merge_categories(db, ("drug", "medication"), "health", "Health", "Santé")
+
+
 def _merge_person(db: sqlite3.Connection, source: str, target: str) -> int:
     """Replace the person `source` with `target` as payer and recipient, then remove `source` if unused.
 
@@ -583,6 +641,8 @@ MIGRATIONS = (
     ("2026-11-23-merge-conjointe-into-conjoint", _migrate_merge_conjointe_into_conjoint),
     ("2026-11-23-rename-entreprise-to-slcti", _migrate_rename_entreprise_to_slcti),
     ("2026-11-24-merge-first-names-into-full-names", _migrate_merge_first_names_into_full_names),
+    ("2026-11-24-merge-bus-and-transportation-into-transit", _migrate_bus_and_transportation_into_transit),
+    ("2026-11-24-merge-medication-into-health", _migrate_medication_into_health),
 )
 
 
