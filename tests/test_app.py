@@ -711,3 +711,35 @@ def test_categories_and_people_report_how_often_they_are_used(monkeypatch, tmp_p
     # Workbook: Sam pays the food and receives the coffee; Alex pays the coffee
     assert people == {"Alex": 2, "Sam": 2, "Sam Admin": 0}
     client.close()
+
+
+def test_first_names_are_merged_into_full_names(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-24-merge-first-names-into-full-names'")
+        db.executemany(
+            "INSERT INTO household_members (name) VALUES (?)",
+            [("Simon",), ("Julie",), ("Simon Charest",), ("Julie Emond",), ("Carmen & Simon",)],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, paid_by, transfer_to) VALUES (?, ?, ?, ?)",
+            [
+                ("2025-07-01", 1.0, "Simon", "Julie"),
+                ("2025-07-02", 2.0, "julie", "Simon Charest"),
+                ("2025-07-03", 3.0, "Sam", "Carmen & Simon"),
+            ],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        rows = [tuple(row) for row in db.execute(
+            "SELECT paid_by, transfer_to FROM expenses WHERE spent_on LIKE '2025-07-%' ORDER BY spent_on"
+        )]
+        assert rows == [
+            ("Simon Charest", "Julie Emond"),
+            ("Julie Emond", "Simon Charest"),
+            ("Sam", "Carmen & Simon"),
+        ]
+        names = {row["name"] for row in db.execute("SELECT name FROM household_members")}
+        assert {"Simon Charest", "Julie Emond", "Carmen & Simon"} <= names
+        assert not names & {"Simon", "Julie"}
+    client.close()

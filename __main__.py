@@ -529,6 +529,12 @@ def _migrate_merge_conjointe_into_conjoint(db: sqlite3.Connection) -> None:
     _merge_person(db, "conjointe", "conjoint")
 
 
+def _migrate_merge_first_names_into_full_names(db: sqlite3.Connection) -> None:
+    """Merge « Simon » into « Simon Charest » and « Julie » into « Julie Emond » (payer and recipient)."""
+    _merge_person(db, "Simon", "Simon Charest")
+    _merge_person(db, "Julie", "Julie Emond")
+
+
 def _migrate_rename_entreprise_to_slcti(db: sqlite3.Connection) -> None:
     """Rename the person « entreprise » to « SLCTI » (payer and recipient)."""
     _merge_person(db, "entreprise", "SLCTI")
@@ -576,6 +582,7 @@ MIGRATIONS = (
     ("2026-11-23-succession-recipient-to-category", _migrate_succession_recipient_to_category),
     ("2026-11-23-merge-conjointe-into-conjoint", _migrate_merge_conjointe_into_conjoint),
     ("2026-11-23-rename-entreprise-to-slcti", _migrate_rename_entreprise_to_slcti),
+    ("2026-11-24-merge-first-names-into-full-names", _migrate_merge_first_names_into_full_names),
 )
 
 
