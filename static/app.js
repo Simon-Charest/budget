@@ -827,7 +827,7 @@ $("#expense-form").addEventListener("submit", async (event) => {
   try {
     const url = editingExpenseId ? `/api/expenses/${editingExpenseId}` : "/api/expenses";
     await api(url, { method: editingExpenseId ? "PUT" : "POST", body: JSON.stringify(payload) });
-    setSelectedMonth(payload.spent_on.slice(0, 7));
+    // Stay on the month being viewed (or "all"), even when the saved expense belongs to another month
     await loadFilters();
     $("#expense-dialog").close();
     await loadExpenses();
