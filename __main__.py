@@ -545,6 +545,63 @@ def _migrate_medication_into_health(db: sqlite3.Connection) -> None:
     _merge_categories(db, ("drug", "medication"), "health", "Health", "Santé")
 
 
+# (target key, English name, French name, rename the target?, source category keys)
+CATEGORY_GROUPS_2026_11_24: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = (
+    ("miscellaneous", "Miscellaneous", "Divers", False, ("unknown", "lost", "services", "work", "entreprise")),
+    ("succession", "Inheritance", "Succession", False, ("lawyer",)),
+    ("restaurant", "Restaurant", "Restaurant", False, ("coffee", "drinks", "tip", "snack", "dessert")),
+    ("alcohol", "Alcohol", "Alcool", False, ("brewing",)),
+    ("grocery", "Groceries", "Épicerie", False, ("cooking",)),
+    ("house", "House", "Maison", False, (
+        "furniture", "appliance", "hardware", "tool", "repair", "cleaning", "pool", "kitchen",
+    )),
+    ("entertainment", "Entertainment", "Divertissement", False, ("console", "gambling", "gym")),
+    ("car", "Car", "Voiture", False, ("gas", "parking", "fine")),
+    ("transit", "Transportation", "Transport", True, ("taxi",)),
+    ("utilities", "Utilities", "Services", True, ("electricity", "internet", "phone", "television")),
+    ("order", "Order", "Commande", False, ("shipping",)),
+    ("hygiene", "Hygiene", "Hygiène", False, ("haircut",)),
+    ("health", "Health", "Santé", False, ("psychology",)),
+    ("income", "Income", "Revenu", False, ("refund", "discount", "found")),
+    ("gift", "Gift", "Cadeau", False, ("charity",)),
+    ("computer", "Technology", "Informatique", True, ("electronics", "mouse")),
+    ("finance", "Finance", "Finances", True, ("bank", "fee", "interests", "credit", "loan", "crypto", "insurance")),
+    ("travel", "Travel", "Voyage", False, ("hotel",)),
+)
+
+
+def _migrate_group_categories(db: sqlite3.Connection) -> None:
+    """Reduce the categories to a short list of one-word categories (see CATEGORY_GROUPS_2026_11_24)."""
+    # The business registration fee is SLCTI's; the other work expenses are personal and keep their recipient
+    registration = db.execute(
+        """
+        SELECT id FROM expenses
+        WHERE spent_on = '2018-11-12' AND round(amount, 2) = 331.0 AND supplier LIKE 'Registre des entreprises%'
+        """
+    ).fetchall()
+    if registration:
+        if not db.execute("SELECT 1 FROM household_members WHERE name = 'SLCTI'").fetchone():
+            db.execute("INSERT INTO household_members (name) VALUES ('SLCTI')")
+        db.executemany("UPDATE expenses SET transfer_to = 'SLCTI' WHERE id = ?", [(row["id"],) for row in registration])
+        logger.info("Set recipient SLCTI on %d business registration expense(s)", len(registration))
+    # A personal flight, filed under Work: it belongs with the travel expenses
+    flight = db.execute(
+        """
+        UPDATE expenses SET category = 'travel'
+        WHERE spent_on = '2026-09-08' AND round(amount, 2) = 643.97 AND supplier = 'Air Canada'
+            AND EXISTS (SELECT 1 FROM categories WHERE category_key = 'travel')
+        """
+    ).rowcount
+    logger.info("Moved %d Air Canada flight(s) to Travel", flight)
+    for target_key, name_en, name_fr, rename, sources in CATEGORY_GROUPS_2026_11_24:
+        _merge_categories(db, sources, target_key, name_en, name_fr)
+        if rename:
+            db.execute(
+                "UPDATE categories SET name_en = ?, name_fr = ? WHERE category_key = ?",
+                (name_en, name_fr, target_key),
+            )
+
+
 def _merge_person(db: sqlite3.Connection, source: str, target: str) -> int:
     """Replace the person `source` with `target` as payer and recipient, then remove `source` if unused.
 
@@ -643,6 +700,7 @@ MIGRATIONS = (
     ("2026-11-24-merge-first-names-into-full-names", _migrate_merge_first_names_into_full_names),
     ("2026-11-24-merge-bus-and-transportation-into-transit", _migrate_bus_and_transportation_into_transit),
     ("2026-11-24-merge-medication-into-health", _migrate_medication_into_health),
+    ("2026-11-24-group-categories", _migrate_group_categories),
 )
 
 

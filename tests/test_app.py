@@ -59,7 +59,7 @@ def make_workbook(path: Path, market_amount: float = 12.5) -> None:
     sheet.title = "Brut"
     sheet.append(["Date", "Montant", "Type", "Fournisseur", "Description", "Payé par", "À transférer à", "Commentaires"])
     sheet.append([date(2025, 1, 3), market_amount, "food", "Market", "Groceries 2025-01-03 00:00:00", "Sam", None, None])
-    sheet.append([date(2025, 1, 4), 7.25, "coffee", "Cafe", None, "Alex", "Sam", "Morning 2025-01-04 00:00:00"])
+    sheet.append([date(2025, 1, 4), 7.25, "books", "Cafe", None, "Alex", "Sam", "Morning 2025-01-04 00:00:00"])
     workbook.save(path)
 
 
@@ -574,7 +574,7 @@ def test_dog_and_cat_expenses_are_merged_into_pet_once(monkeypatch, tmp_path):
         assert "dog" not in categories and "cat" not in categories
         assert categories["pet"] == ("Pet", "Animal de compagnie")
         assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'pet'").fetchone()[:] == (3, 58.0)
-        assert db.execute("SELECT COUNT(*) FROM expenses WHERE category IN ('food', 'coffee')").fetchone()[0] == 2
+        assert db.execute("SELECT COUNT(*) FROM expenses WHERE category IN ('food', 'books')").fetchone()[0] == 2
         # Applied once: a Dog category created later is kept
         db.execute("INSERT INTO categories (category_key, name_en, name_fr) VALUES ('dog', 'Dog', 'Chien')")
     budget_app.initialize_database()
@@ -612,7 +612,7 @@ def test_succession_recipient_becomes_succession_category(monkeypatch, tmp_path)
             [
                 ("2025-04-01", 100.0, "food", "Sam", "succession"),
                 ("2025-04-02", 50.0, None, "Alex", "Succession"),
-                ("2025-04-03", 9.0, "coffee", "Sam", "Alex"),
+                ("2025-04-03", 9.0, "books", "Sam", "Alex"),
             ],
         )
     budget_app.initialize_database()
@@ -623,7 +623,7 @@ def test_succession_recipient_becomes_succession_category(monkeypatch, tmp_path)
         assert rows == [
             ("2025-04-01", 100.0, "succession", None),
             ("2025-04-02", 50.0, "succession", None),
-            ("2025-04-03", 9.0, "coffee", "Alex"),
+            ("2025-04-03", 9.0, "books", "Alex"),
         ]
         assert tuple(db.execute("SELECT name_en, name_fr FROM categories WHERE category_key = 'succession'").fetchone()) == (
             "Inheritance", "Succession",
@@ -706,9 +706,9 @@ def test_categories_and_people_report_how_often_they_are_used(monkeypatch, tmp_p
         db.execute("INSERT INTO expenses (spent_on, amount, category, paid_by, transfer_to) VALUES ('2025-01-05', 1, 'food', 'Alex', 'alex')")
 
     uses = {item["category_key"]: item["usage_count"] for item in client.get("/api/categories").json()}
-    assert uses == {"food": 2, "coffee": 1, "unused": 0}
+    assert uses == {"food": 2, "books": 1, "unused": 0}
     people = {item["name"]: item["usage_count"] for item in client.get("/api/household-members").json()}
-    # Workbook: Sam pays the food and receives the coffee; Alex pays the coffee
+    # Workbook: Sam pays the food and receives the books; Alex pays the books
     assert people == {"Alex": 2, "Sam": 2, "Sam Admin": 0}
     client.close()
 
@@ -795,4 +795,78 @@ def test_medication_is_merged_into_existing_health(monkeypatch, tmp_path):
         assert tuple(db.execute("SELECT name_en, name_fr FROM categories WHERE category_key = 'health'").fetchone()) == ("Health", "Santé")
         assert db.execute("SELECT COUNT(*) FROM categories WHERE lower(name_en) = 'health'").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'health' AND spent_on LIKE '2025-09-%'").fetchone()[:] == (2, 92.0)
+    client.close()
+
+
+def test_categories_are_grouped_into_one_word_categories(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-24-group-categories'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [
+                ("transit", "Transit", "Transport en commun"), ("taxi", "Taxi", "Taxi"),
+                ("electricity", "Electricity", "Électricité"), ("phone", "Telephone", "Téléphone"),
+                ("services", "Services", "Services"), ("miscellaneous", "Miscellaneous", "Divers"),
+                ("house", "House", "Maison"), ("tool", "Tool", "Outil"),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category) VALUES (?, ?, ?)",
+            [
+                ("2025-10-01", 3.0, "transit"), ("2025-10-02", 15.0, "taxi"),
+                ("2025-10-03", 90.0, "electricity"), ("2025-10-04", 40.0, "phone"),
+                ("2025-10-05", 7.0, "services"), ("2025-10-06", 25.0, "tool"),
+            ],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        categories = {row["category_key"]: (row["name_en"], row["name_fr"]) for row in db.execute("SELECT * FROM categories")}
+        assert categories["transit"] == ("Transportation", "Transport")
+        assert categories["utilities"] == ("Utilities", "Services")
+        assert categories["house"] == ("House", "Maison")
+        assert not {"taxi", "electricity", "phone", "services", "tool"} & categories.keys()
+        rows = dict(db.execute(
+            "SELECT category, SUM(amount) FROM expenses WHERE spent_on LIKE '2025-10-%' GROUP BY category"
+        ).fetchall())
+        assert rows == {"transit": 18.0, "utilities": 130.0, "miscellaneous": 7.0, "house": 25.0}
+    client.close()
+
+
+def test_grouping_sets_slcti_only_on_the_registration_and_merges_snacks_and_lawyer(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-24-group-categories'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [
+                ("work", "Work", "Travail"), ("entreprise", "Business", "Entreprise"), ("lawyer", "Lawyer", "Avocat"),
+                ("succession", "Inheritance", "Succession"), ("snack", "Snack", "Collation"),
+                ("restaurant", "Restaurant", "Restaurant"), ("travel", "Travel", "Voyage"),
+            ],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category, supplier, paid_by, transfer_to) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                ("2018-11-12", 331.0, "entreprise", "Registre des entreprises du Québec", "Sam", "Alex"),
+                ("2026-09-08", 643.97, "work", "Air Canada", "Sam", None),
+                ("2018-08-28", 91.87, "work", "Canadian Tire", "Sam", "Alex"),
+                ("2025-11-03", 70.0, "lawyer", "Excelsior Avocats", "Sam", None),
+                ("2025-11-04", 4.0, "snack", "Dépanneur", "Sam", None),
+            ],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        rows = {row["supplier"]: (row["category"], row["transfer_to"]) for row in db.execute(
+            "SELECT supplier, category, transfer_to FROM expenses WHERE supplier IS NOT NULL AND supplier <> 'Market' AND supplier <> 'Cafe'"
+        )}
+        assert rows == {
+            "Registre des entreprises du Québec": ("miscellaneous", "SLCTI"),
+            "Air Canada": ("travel", None),
+            "Canadian Tire": ("miscellaneous", "Alex"),
+            "Excelsior Avocats": ("succession", None),
+            "Dépanneur": ("restaurant", None),
+        }
+        keys = {row["category_key"] for row in db.execute("SELECT category_key FROM categories")}
+        assert not {"work", "entreprise", "lawyer", "snack"} & keys
     client.close()
