@@ -78,10 +78,12 @@
         <div class="table-wrap"><table class="category-table"><thead><tr>
           <th aria-sort="ascending"><button class="category-sort-button" type="button" data-category-sort="name_en"><span data-i18n="categoryEnglish"></span><span class="sort-indicator" aria-hidden="true">↑</span></button></th>
           <th aria-sort="none"><button class="category-sort-button" type="button" data-category-sort="name_fr"><span data-i18n="categoryFrench"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
+          <th class="usage-count-cell" aria-sort="none"><button class="category-sort-button" type="button" data-category-sort="usage_count"><span data-i18n="usageCount"></span><span class="sort-indicator" aria-hidden="true"></span></button></th>
           <th data-i18n="actions"></th>
         </tr><tr class="table-filters category-filters">
           <th><input id="category-filter-en" type="search" data-i18n-placeholder="filterEnglishCategory" data-i18n-aria-label="filterEnglishCategory"></th>
           <th><input id="category-filter-fr" type="search" data-i18n-placeholder="filterFrenchCategory" data-i18n-aria-label="filterFrenchCategory"></th>
+          <th></th>
           <th><button id="clear-category-filters" class="icon-button filter-clear-button" type="button" data-i18n-aria-label="clearFilters" data-i18n-title="clearFilters"><svg><use href="#i-close"></use></svg></button></th>
         </tr></thead><tbody id="category-table-body"></tbody></table></div>
         <div class="table-footer"><span id="category-count"></span><button id="add-category-button" class="icon-button primary-button" type="button" data-i18n-aria-label="addCategory" data-i18n-title="addCategory"><svg><use href="#i-plus"></use></svg></button></div>
@@ -137,7 +139,7 @@
       <div class="page-heading"><div><p class="eyebrow" data-i18n="accountAccess"></p><h1 data-i18n="usersTitle"></h1><p class="subheading" data-i18n="usersSubtitle"></p></div></div>
       <section class="panel users-list-panel">
         <div class="table-wrap"><table class="users-table"><thead><tr>
-          <th data-i18n="name"></th><th data-i18n="email"></th><th data-i18n="accountType"></th><th data-i18n="actions"></th>
+          <th data-i18n="name"></th><th data-i18n="email"></th><th data-i18n="accountType"></th><th class="usage-count-cell" data-i18n="usageCount"></th><th data-i18n="actions"></th>
         </tr></thead><tbody id="users-table-body"></tbody></table></div>
         <div class="table-footer"><span id="user-count"></span><button id="add-user-button" class="icon-button primary-button" type="button" data-i18n-aria-label="addUser" data-i18n-title="addUser"><svg><use href="#i-plus"></use></svg></button></div>
       </section>

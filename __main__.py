@@ -840,10 +840,16 @@ def filters(user: Annotated[dict[str, Any], Depends(require_user)]) -> dict[str,
 
 
 @app.get("/api/categories")
-def categories(_: Annotated[dict[str, Any], Depends(require_user)]) -> list[dict[str, str]]:
+def categories(_: Annotated[dict[str, Any], Depends(require_user)]) -> list[dict[str, Any]]:
     with connect() as db:
         rows = db.execute(
-            "SELECT category_key, name_en, name_fr FROM categories ORDER BY name_en COLLATE NOCASE"
+            """
+            SELECT c.category_key, c.name_en, c.name_fr, COUNT(e.id) AS usage_count
+            FROM categories AS c
+            LEFT JOIN expenses AS e ON e.category = c.category_key
+            GROUP BY c.category_key
+            ORDER BY c.name_en COLLATE NOCASE
+            """
         ).fetchall()
     return [dict(row) for row in rows]
 
@@ -1312,7 +1318,17 @@ def remove_user(
 def household_members(_: Annotated[dict[str, Any], Depends(require_user)]) -> list[dict[str, Any]]:
     with connect() as db:
         _sync_household_members(db)
-        rows = db.execute("SELECT id, name FROM household_members ORDER BY name COLLATE NOCASE")
+        # Expenses where the person is the payer or the recipient (counted once when both)
+        rows = db.execute(
+            """
+            SELECT m.id, m.name, (
+                SELECT COUNT(*) FROM expenses AS e
+                WHERE e.paid_by = m.name COLLATE NOCASE OR e.transfer_to = m.name COLLATE NOCASE
+            ) AS usage_count
+            FROM household_members AS m
+            ORDER BY m.name COLLATE NOCASE
+            """
+        )
         return [dict(row) for row in rows]
 
 

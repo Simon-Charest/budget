@@ -689,3 +689,25 @@ def test_merge_person_does_nothing_without_the_source(monkeypatch, tmp_path):
         assert budget_app._merge_person(db, "nobody", "SLCTI") == 0
         assert {row["name"] for row in db.execute("SELECT name FROM household_members")} == before
     client.close()
+
+
+def test_categories_and_people_report_how_often_they_are_used(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    budget_app.create_user("admin@example.ca", "correct horse battery", "Sam", "Admin", is_admin=True)
+    headers = {"Origin": "http://testserver"}
+    assert client.post(
+        "/api/login",
+        json={"email": "admin@example.ca", "password": "correct horse battery"},
+        headers=headers,
+    ).status_code == 200
+    with budget_app.connect() as db:
+        db.execute("INSERT INTO categories (category_key, name_en, name_fr) VALUES ('unused', 'Unused', 'Inutilisée')")
+        # Payer and recipient on the same expense counts once
+        db.execute("INSERT INTO expenses (spent_on, amount, category, paid_by, transfer_to) VALUES ('2025-01-05', 1, 'food', 'Alex', 'alex')")
+
+    uses = {item["category_key"]: item["usage_count"] for item in client.get("/api/categories").json()}
+    assert uses == {"food": 2, "coffee": 1, "unused": 0}
+    people = {item["name"]: item["usage_count"] for item in client.get("/api/household-members").json()}
+    # Workbook: Sam pays the food and receives the coffee; Alex pays the coffee
+    assert people == {"Alex": 2, "Sam": 2, "Sam Admin": 0}
+    client.close()

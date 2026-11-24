@@ -111,7 +111,8 @@ tbody tr:hover { background: #fafbf7; }
 .filter-clear-button svg { width: 15px; height: 15px; }
 .category-manager { padding: 0; overflow: hidden; }
 .category-table { min-width: 560px; }
-.category-table th:nth-child(1), .category-table th:nth-child(2) { width: 42%; }
+.category-table th:nth-child(1), .category-table th:nth-child(2) { width: 36%; }
+.usage-count-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .category-table .category-filters th { padding: 5px 7px; }
 .category-table .category-filters input { width: 100%; min-width: 100px; height: 31px; padding: 0 7px; border: 1px solid var(--line); border-radius: 6px; outline: none; color: var(--ink); background: #fff; font-size: 10px; }
 .category-sort-button { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; font: inherit; }
@@ -187,8 +188,9 @@ tbody tr:hover { background: #fafbf7; }
 .users-list-panel { padding: 0; overflow: hidden; }
 .users-table { min-width: 560px; }
 .users-table th:nth-child(1) { width: 27%; }
-.users-table th:nth-child(2) { width: 39%; }
-.users-table th:nth-child(3) { width: 20%; }
+.users-table th:nth-child(2) { width: 31%; }
+.users-table th:nth-child(3) { width: 18%; }
+.users-table th:nth-child(4) { width: 10%; }
 .users-table th:last-child, .users-table td:last-child { width: 1%; }
 .user-name-cell { color: #33423a; font-weight: 600; }
 .user-email-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

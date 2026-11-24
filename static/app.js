@@ -7,7 +7,7 @@ const TEXT = {
     budgetSubtitle: "Every expense, all in one place.", year: "Year", month: "Month", category: "Category", payer: "Payer", selectMember: "Select a person", clearFilters: "Clear filters", filterOptionsFailed: "Filter options could not be loaded. Please reload the page.", actions: "Actions", addExpense: "Add expense", editExpense: "Edit expense",
     deleteExpense: "Delete expense", addExpenseTooltip: "Add", editExpenseTooltip: "Edit", deleteExpenseTooltip: "Delete", confirmDeleteExpense: "Delete this expense?", saveExpense: "Save expense",
     categoryEnglish: "English name", addCategory: "Add category", editCategory: "Edit category",
-    categoryFrench: "French name", manageCategories: "Manage categories", categoriesTitle: "Categories",
+    categoryFrench: "French name", usageCount: "Uses", manageCategories: "Manage categories", categoriesTitle: "Categories",
     saveCategory: "Save category", categoryCount: "{count} categories", noCategories: "No categories found.", noCategoryMatches: "No categories match these filters.", deleteCategory: "Delete category",
     confirmDeleteCategory: "Delete this category?", categoryInUse: "This category is used by existing expenses and cannot be deleted.",
     categoryNamesRequired: "Enter both category names.",
@@ -50,7 +50,7 @@ const TEXT = {
     year: "Année", month: "Mois", category: "Catégorie", payer: "Payeur", selectMember: "Sélectionner une personne", clearFilters: "Effacer les filtres", filterOptionsFailed: "Impossible de charger les filtres. Veuillez actualiser la page.", actions: "Actions", addExpense: "Ajouter une dépense", editExpense: "Modifier la dépense",
     deleteExpense: "Supprimer la dépense", addExpenseTooltip: "Ajouter", editExpenseTooltip: "Modifier", deleteExpenseTooltip: "Supprimer", confirmDeleteExpense: "Supprimer cette dépense ?", saveExpense: "Enregistrer",
     categoryEnglish: "Nom anglais", addCategory: "Ajouter une catégorie", editCategory: "Modifier la catégorie",
-    categoryFrench: "Nom français", manageCategories: "Gérer les catégories", categoriesTitle: "Catégories",
+    categoryFrench: "Nom français", usageCount: "Utilisations", manageCategories: "Gérer les catégories", categoriesTitle: "Catégories",
     saveCategory: "Enregistrer", categoryCount: "{count} catégories", noCategories: "Aucune catégorie.", noCategoryMatches: "Aucune catégorie ne correspond aux filtres.", deleteCategory: "Supprimer la catégorie",
     confirmDeleteCategory: "Supprimer cette catégorie ?", categoryInUse: "Cette catégorie est utilisée par des dépenses et ne peut pas être supprimée.",
     categoryNamesRequired: "Saisissez les deux noms de catégorie.",
@@ -318,6 +318,10 @@ async function loadCategories() {
   renderCategoryList();
 }
 
+function formatCount(value) {
+  return new Intl.NumberFormat(language === "fr" ? "fr-CA" : "en-CA").format(value ?? 0);
+}
+
 function renderCategoryList() {
   const body = $("#category-table-body");
   body.replaceChildren();
@@ -326,14 +330,15 @@ function renderCategoryList() {
   const filtered = categories.filter((category) =>
     category.name_en.toLocaleLowerCase().includes(englishFilter)
     && category.name_fr.toLocaleLowerCase().includes(frenchFilter));
-  filtered.sort((a, b) => categorySortDirection * a[categorySortField].localeCompare(
-    b[categorySortField], language === "fr" ? "fr-CA" : "en-CA", { sensitivity: "base" },
-  ));
+  const collator = new Intl.Collator(language === "fr" ? "fr-CA" : "en-CA", { sensitivity: "base" });
+  filtered.sort((a, b) => categorySortDirection * (categorySortField === "usage_count"
+    ? (a.usage_count - b.usage_count) || collator.compare(a.name_en, b.name_en)
+    : collator.compare(a[categorySortField], b[categorySortField])));
   $("#category-count").textContent = tr("categoryCount").replace("{count}", String(filtered.length));
   if (!filtered.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 3;
+    cell.colSpan = 4;
     cell.className = "empty-state";
     cell.textContent = categories.length ? tr("noCategoryMatches") : tr("noCategories");
     row.append(cell);
@@ -348,6 +353,9 @@ function renderCategoryList() {
     const frenchName = document.createElement("td");
     frenchName.className = "category-name-cell category-name-fr";
     frenchName.textContent = category.name_fr;
+    const uses = document.createElement("td");
+    uses.className = "usage-count-cell";
+    uses.textContent = formatCount(category.usage_count);
     const actions = document.createElement("td");
     actions.className = "category-actions-cell";
     const buttons = document.createElement("span");
@@ -378,7 +386,7 @@ function renderCategoryList() {
     });
     buttons.append(edit, remove);
     actions.append(buttons);
-    row.append(name, frenchName, actions);
+    row.append(name, frenchName, uses, actions);
     body.append(row);
   }
 }
@@ -589,11 +597,11 @@ async function loadUsers() {
     users.map((user) => `${user.first_name} ${user.last_name}`.toLocaleLowerCase()),
   );
   const people = [
-    ...users.map((user) => ({
-      ...user,
-      kind: "account",
-      name: `${user.first_name} ${user.last_name}`,
-    })),
+    ...users.map((user) => {
+      const name = `${user.first_name} ${user.last_name}`;
+      const member = members.find((item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+      return { ...user, kind: "account", name, usage_count: member?.usage_count ?? 0 };
+    }),
     ...members
       .filter((member) => !accountNames.has(member.name.toLocaleLowerCase()))
       .map((member) => ({ ...member, kind: "member", email: "", is_admin: null })),
@@ -609,7 +617,7 @@ async function loadUsers() {
   if (!people.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 4;
+    cell.colSpan = 5;
     cell.className = "empty-state";
     cell.textContent = tr("noUsers");
     row.append(cell);
@@ -631,6 +639,9 @@ async function loadUsers() {
       role.textContent = user.is_admin ? tr("administrator") : tr("user");
       accountType.append(role);
     }
+    const uses = document.createElement("td");
+    uses.className = "usage-count-cell";
+    uses.textContent = formatCount(user.usage_count);
     const actions = document.createElement("td");
     actions.className = "user-actions-cell";
     const actionButtons = document.createElement("span");
@@ -667,7 +678,7 @@ async function loadUsers() {
     remove.disabled = user.kind === "account" && user.email === currentUser.email;
     actionButtons.append(remove);
     actions.append(actionButtons);
-    row.append(name, email, accountType, actions);
+    row.append(name, email, accountType, uses, actions);
     list.append(row);
   }
 }
