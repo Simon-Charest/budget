@@ -102,6 +102,7 @@ let language = localStorage.getItem("budget-language") || "en";
 let currentUser = null;
 let currentPage = 1;
 let expenseCount = 0;
+let visibleExpenseCount = 0;
 let expenseSortField = "spent_on";
 let expenseSortDirection = "asc";
 let searchTimer;
@@ -442,6 +443,7 @@ async function loadExpenses() {
   }
   const data = await api(`/api/expenses?${params}`);
   expenseCount = data.count;
+  visibleExpenseCount = data.items.length;
   const pageCount = Math.max(1, Math.ceil(data.count / data.page_size));
   if (currentPage > pageCount) {
     currentPage = pageCount;
@@ -592,9 +594,10 @@ function renderExpenses(items) {
 function renderPageStatus(pageCount = Math.max(1, Math.ceil(expenseCount / 50))) {
   const status = $("#page-status");
   if (!status || !currentUser || $("#budget-view").hidden) return;
+  const number = new Intl.NumberFormat(language === "fr" ? "fr-CA" : "en-CA");
   const message = language === "fr"
-    ? `Page ${currentPage} sur ${pageCount} · ${new Intl.NumberFormat("fr-CA").format(expenseCount)} dépenses`
-    : `Page ${currentPage} of ${pageCount} · ${new Intl.NumberFormat("en-CA").format(expenseCount)} expenses`;
+    ? `Page ${currentPage} sur ${pageCount} · ${number.format(visibleExpenseCount)} sur ${number.format(expenseCount)} dépenses`
+    : `Page ${currentPage} of ${pageCount} · ${number.format(visibleExpenseCount)} of ${number.format(expenseCount)} expenses`;
   status.textContent = message;
 }
 
