@@ -221,6 +221,9 @@ tfoot[hidden] { display: none; }
 .danger-button svg { width: 16px; height: 16px; }
 .icon-library, .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 footer { position: sticky; z-index: 4; bottom: 0; min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: auto; padding: 0 clamp(22px, 6vw, 88px); border-top: 1px solid var(--line); color: #89928c; background: rgba(255,255,255,.96); font-size: 10px; }
+footer > span { flex: 1; }
+footer .footer-center { text-align: center; }
+footer .footer-right { text-align: right; }
 footer a { color: #697970; text-decoration: none; }
 footer a:hover { color: var(--green); }
 
@@ -238,6 +241,8 @@ footer a:hover { color: var(--green); }
   .login-art { min-height: 195px; }.art-orbit { width: 210px; height: 210px; }.art-card { transform: rotate(-4deg) scale(.78); }
   .login-panel h1 { font-size: 35px; }
   footer { flex-wrap: wrap; justify-content: center; padding: 18px 20px; text-align: center; }
+  footer > span { flex-basis: 100%; }
+  footer .footer-right { text-align: center; }
 }
 @media (max-width: 440px) {
   .topbar { padding: 0 14px; }.brand { gap: 7px; font-size: 18px; }.brand-mark { width: 29px; height: 29px; }
