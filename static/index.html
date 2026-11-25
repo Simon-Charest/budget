@@ -101,15 +101,22 @@
     </section>
 
     <section id="report-view" hidden>
-      <div class="page-heading">
-        <div><p class="eyebrow" data-i18n="overview"></p><h1 data-i18n="reportTitle"></h1><p class="subheading" data-i18n="reportSubtitle"></p></div>
-        <div class="filter-row">
-          <label class="sr-only" for="report-month-filter" data-i18n="month"></label><select id="report-month-filter" data-month-filter></select>
-          <label class="sr-only" for="report-year-filter" data-i18n="year"></label><select id="report-year-filter" data-filter="year"></select>
-          <label class="sr-only" for="report-category-filter" data-i18n="category"></label><select id="report-category-filter" data-filter="category"></select>
-          <label class="sr-only" for="report-payer-filter" data-i18n="payer"></label><select id="report-payer-filter" data-filter="payer"></select>
-        </div>
-      </div>
+      <div class="page-heading"><div><h1 data-i18n="reportTitle"></h1></div></div>
+      <section class="panel report-filters-panel">
+        <div class="table-wrap"><table class="report-filters-table"><thead><tr>
+          <th data-i18n="year"></th>
+          <th data-i18n="month"></th>
+          <th data-i18n="category"></th>
+          <th data-i18n="payer"></th>
+          <th></th>
+        </tr><tr class="table-filters">
+          <th><label class="sr-only" for="report-year-filter" data-i18n="year"></label><select id="report-year-filter" data-filter="year"></select></th>
+          <th><label class="sr-only" for="report-month-filter" data-i18n="month"></label><select id="report-month-filter" data-month-filter></select></th>
+          <th><label class="sr-only" for="report-category-filter" data-i18n="category"></label><select id="report-category-filter" data-filter="category"></select></th>
+          <th><label class="sr-only" for="report-payer-filter" data-i18n="payer"></label><select id="report-payer-filter" data-filter="payer"></select></th>
+          <th><button id="clear-report-filters" class="icon-button filter-clear-button" type="button" data-i18n-aria-label="clearFilters" data-i18n-title="clearFilters"><svg><use href="#i-close"></use></svg></button></th>
+        </tr></thead></table></div>
+      </section>
       <div class="summary-grid">
         <article class="summary-card total-card"><div class="card-label"><span data-i18n="totalSpent"></span><span class="card-icon"><svg><use href="#i-coins"></use></svg></span></div><strong id="total-spent">—</strong><span class="card-foot" data-i18n="filteredTotal"></span></article>
         <article class="summary-card"><div class="card-label"><span data-i18n="transactions"></span><span class="card-icon lavender"><svg><use href="#i-receipt"></use></svg></span></div><strong id="transaction-count">—</strong><span class="card-foot" data-i18n="matchingRecords"></span></article>
@@ -137,7 +144,7 @@
     </dialog>
 
     <section id="users-view" hidden>
-      <div class="page-heading"><div><p class="eyebrow" data-i18n="accountAccess"></p><h1 data-i18n="usersTitle"></h1><p class="subheading" data-i18n="usersSubtitle"></p></div></div>
+      <div class="page-heading"><div><h1 data-i18n="usersTitle"></h1></div></div>
       <section class="panel users-list-panel">
         <div class="table-wrap"><table class="users-table"><thead><tr>
           <th data-i18n="name"></th><th data-i18n="email"></th><th data-i18n="accountType"></th><th class="usage-count-cell" data-i18n="usageCount"></th><th data-i18n="actions"></th>

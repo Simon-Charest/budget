@@ -113,6 +113,10 @@ tfoot[hidden] { display: none; }
 .filter-clear-button { width: 32px; height: 32px; margin-left: auto; }
 .filter-clear-button svg { width: 15px; height: 15px; }
 .category-manager { padding: 0; overflow: hidden; }
+.report-filters-panel { padding: 0; overflow: hidden; margin-bottom: 20px; }
+.report-filters-table { min-width: 520px; }
+.report-filters-table th:not(:last-child) { width: 24%; }
+.report-filters-table th:last-child { text-align: right; }
 .category-table { min-width: 560px; }
 .category-table th:nth-child(1), .category-table th:nth-child(2) { width: 36%; }
 .usage-count-cell { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }

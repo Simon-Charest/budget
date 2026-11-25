@@ -3,7 +3,7 @@
 const TEXT = {
   en: {
     navBudget: "Budget", navReport: "Report", navCategories: "Categories", navUsers: "Users", email: "Email address", password: "Password", signIn: "Sign in",
-    overview: "YOUR FINANCES", budgetTitle: "Budget",
+    budgetTitle: "Budget",
     budgetSubtitle: "Every expense, all in one place.", year: "Year", month: "Month", category: "Category", payer: "Payer", selectMember: "Select a person", clearFilters: "Clear filters", filterOptionsFailed: "Filter options could not be loaded. Please reload the page.", actions: "Actions", addExpense: "Add expense", editExpense: "Edit expense",
     deleteExpense: "Delete expense", addExpenseTooltip: "Add", editExpenseTooltip: "Edit", deleteExpenseTooltip: "Delete", confirmDeleteExpense: "Delete this expense?", saveExpense: "Save expense",
     categoryEnglish: "English name", addCategory: "Add category", editCategory: "Edit category",
@@ -18,14 +18,14 @@ const TEXT = {
     filterRecipient: "Filter recipient", recipient: "Recipient",
     noCategory: "No category", conflict: "An item with that name already exists.", totalSpent: "Total spent",
     filteredTotal: "For the selected filters", selectionTotal: "Total",transactions: "Transactions", matchingRecords: "Matching records",
-    reportTitle: "Financial report", reportSubtitle: "A summary of your household spending.",
+    reportTitle: "Financial report",
     averageExpense: "Average expense", perTransaction: "Per transaction", spendingBreakdown: "SPENDING BREAKDOWN",
     byCategory: "By category", recentActivity: "RECENT ACTIVITY", monthlySpending: "Monthly spending",
     ledger: "THE LEDGER", all: "All", search: "Search expenses", searchPlaceholder: "Search merchant or notes…", date: "Date",
     merchant: "Merchant", description: "Description", amount: "Amount", transferTo: "Recipient",
     noExpenses: "No expenses match these filters.",
-    pageOf: "Page {page} of {pages} · {count} expenses", accountAccess: "PEOPLE", usersTitle: "Users",
-    usersSubtitle: "Manage household members and sign-in accounts in one list.", newAccount: "NEW PERSON", addUser: "Add a person",
+    pageOf: "Page {page} of {pages} · {count} expenses", usersTitle: "Users",
+    newAccount: "NEW PERSON", addUser: "Add a person",
     firstName: "First name", lastName: "Last name", passwordHint: "Use at least 12 characters.", optionalPassword: "Leave blank to keep the current password.",
     noAccount: "No sign-in account", accountDetailsOptional: "Leave email, account type, and password blank for a household member without sign-in access.",
     fullNameRequired: "Enter a first and last name for a sign-in account.",
@@ -46,7 +46,7 @@ const TEXT = {
   fr: {
     navBudget: "Budget", navReport: "Rapport", navCategories: "Catégories", navUsers: "Utilisateurs", email: "Adresse courriel", password: "Mot de passe",
     signIn: "Connexion",
-    overview: "VOS FINANCES", budgetTitle: "Budget", budgetSubtitle: "Toutes vos dépenses, au même endroit.",
+    budgetTitle: "Budget", budgetSubtitle: "Toutes vos dépenses, au même endroit.",
     year: "Année", month: "Mois", category: "Catégorie", payer: "Payeur", selectMember: "Sélectionner une personne", clearFilters: "Effacer les filtres", filterOptionsFailed: "Impossible de charger les filtres. Veuillez actualiser la page.", actions: "Actions", addExpense: "Ajouter une dépense", editExpense: "Modifier la dépense",
     deleteExpense: "Supprimer la dépense", addExpenseTooltip: "Ajouter", editExpenseTooltip: "Modifier", deleteExpenseTooltip: "Supprimer", confirmDeleteExpense: "Supprimer cette dépense ?", saveExpense: "Enregistrer",
     categoryEnglish: "Nom anglais", addCategory: "Ajouter une catégorie", editCategory: "Modifier la catégorie",
@@ -60,15 +60,15 @@ const TEXT = {
     filterMerchant: "Filtrer par commerçant", filterDescription: "Filtrer par description", filterPayer: "Filtrer par payeur",
     filterRecipient: "Filtrer par bénéficiaire", recipient: "Bénéficiaire",
     noCategory: "Aucune catégorie", conflict: "Un élément portant ce nom existe déjà.", totalSpent: "Total des dépenses",
-    reportTitle: "Rapport financier", reportSubtitle: "Un aperçu des dépenses du foyer.",
+    reportTitle: "Rapport financier",
     filteredTotal: "Selon les filtres", selectionTotal: "Total",transactions: "Transactions", matchingRecords: "Résultats correspondants",
     averageExpense: "Dépense moyenne", perTransaction: "Par transaction", spendingBreakdown: "RÉPARTITION DES DÉPENSES",
     byCategory: "Par catégorie", recentActivity: "ACTIVITÉ RÉCENTE", monthlySpending: "Dépenses mensuelles",
     ledger: "LE GRAND LIVRE", all: "Tout", search: "Rechercher des dépenses", searchPlaceholder: "Commerçant ou notes…", date: "Date",
     merchant: "Commerçant", description: "Description", amount: "Montant", transferTo: "Bénéficiaire",
     noExpenses: "Aucune dépense ne correspond aux filtres.",
-    pageOf: "Page {page} sur {pages} · {count} dépenses", accountAccess: "PERSONNES", usersTitle: "Utilisateurs",
-    usersSubtitle: "Gérez les membres du foyer et les comptes de connexion dans une seule liste.", newAccount: "NOUVELLE PERSONNE",
+    pageOf: "Page {page} sur {pages} · {count} dépenses", usersTitle: "Utilisateurs",
+    newAccount: "NOUVELLE PERSONNE",
     addUser: "Ajouter une personne", editUser: "Modifier la personne", saveUser: "Enregistrer la personne", firstName: "Prénom", lastName: "Nom de famille",
     passwordHint: "Utilisez au moins 12 caractères.", optionalPassword: "Laissez ce champ vide pour conserver le mot de passe actuel.", createAccount: "Créer le compte", accessList: "COMPTES AUTORISÉS",
     noAccount: "Aucun compte de connexion", accountDetailsOptional: "Laissez le courriel, le type de compte et le mot de passe vides pour un membre du foyer sans accès.",
@@ -913,6 +913,13 @@ document.querySelectorAll("[data-search-field]").forEach((control) => {
 $("#clear-filters-button").addEventListener("click", () => {
   document.querySelectorAll("#budget-view [data-search-field]").forEach((control) => { control.value = ""; });
   $("#budget-month-filter").value = "all";
+  setSelectedMonth("all");
+  currentPage = 1;
+  loadExpenses().catch(showError);
+});
+$("#clear-report-filters").addEventListener("click", () => {
+  document.querySelectorAll("#report-view [data-filter]").forEach((select) => { select.value = ""; });
+  document.querySelectorAll("[data-month-filter]").forEach((select) => { select.value = "all"; });
   setSelectedMonth("all");
   currentPage = 1;
   loadExpenses().catch(showError);
