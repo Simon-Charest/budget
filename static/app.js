@@ -24,7 +24,7 @@ const TEXT = {
     ledger: "THE LEDGER", all: "All", search: "Search expenses", searchPlaceholder: "Search merchant or notes…", date: "Date",
     merchant: "Merchant", description: "Description", amount: "Amount", transferTo: "Recipient",
     noExpenses: "No expenses match these filters.",
-    pageOf: "Page {page} of {pages} · {count} expenses", usersTitle: "Users",
+    pageOf: "Page {page} of {pages} · {count} expenses", usersTitle: "Users", copyright: "© SLCTI. All rights reserved.",
     sharedAccount: "SHARED ACCOUNT", whoOwesWhom: "Who owes whom", owesTo: "{debtor} owes {creditor}",
     owesDetail: "Half of shared expenses: {shared} · Paid on their behalf: {direct}",
     balanceNet: "Balance: {debtor} owes {creditor} {amount}", balanceEven: "Balance: nobody owes anything.",
@@ -71,7 +71,7 @@ const TEXT = {
     ledger: "LE GRAND LIVRE", all: "Tout", search: "Rechercher des dépenses", searchPlaceholder: "Commerçant ou notes…", date: "Date",
     merchant: "Commerçant", description: "Description", amount: "Montant", transferTo: "Bénéficiaire",
     noExpenses: "Aucune dépense ne correspond aux filtres.",
-    pageOf: "Page {page} sur {pages} · {count} dépenses", usersTitle: "Utilisateurs",
+    pageOf: "Page {page} sur {pages} · {count} dépenses", usersTitle: "Utilisateurs", copyright: "© SLCTI. Tous droits réservés.",
     sharedAccount: "COMPTE CONJOINT", whoOwesWhom: "Qui doit quoi", owesTo: "{debtor} doit à {creditor}",
     owesDetail: "Moitié des dépenses communes : {shared} · Payé pour cette personne : {direct}",
     balanceNet: "Solde : {debtor} doit {amount} à {creditor}", balanceEven: "Solde : personne ne doit rien.",
@@ -177,7 +177,6 @@ function applyLanguage() {
   if ($("#category-dialog").open) {
     $("#category-form-title").textContent = tr(editingCategoryKey === null ? "addCategory" : "editCategory");
   }
-  $("#current-year").textContent = new Date().getFullYear();
   renderPageStatus();
 }
 
@@ -854,7 +853,7 @@ $("#user-form").addEventListener("submit", async (event) => {
     }
   } catch (error) {
     $("#user-error").textContent = error.status === 409
-      ? tr(editingPersonKind === "member" ? "personNameExists" : "accountExists")
+      ? tr(isAccount ? "accountExists" : "personNameExists")
       : error.status === 400 && editingUserId !== null ? tr("cannotDemoteAdmin")
         : (error.message || tr("failed"));
     $("#user-error").hidden = false;
@@ -863,7 +862,8 @@ $("#user-form").addEventListener("submit", async (event) => {
   editingUserId = null;
   editingHouseholdMemberId = null;
   editingPersonKind = null;
-  event.currentTarget.reset();
+  // After an await, event.currentTarget is null: name the form instead
+  $("#user-form").reset();
   $("#user-dialog").close();
   await loadUsers().catch(showError);
 });
