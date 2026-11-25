@@ -17,7 +17,7 @@ const TEXT = {
     filterMerchant: "Filter merchant", filterDescription: "Filter description", filterPayer: "Filter payer",
     filterRecipient: "Filter recipient", recipient: "Recipient",
     noCategory: "No category", conflict: "An item with that name already exists.", totalSpent: "Total spent",
-    filteredTotal: "For the selected filters", transactions: "Transactions", matchingRecords: "Matching records",
+    filteredTotal: "For the selected filters", selectionTotal: "Total",transactions: "Transactions", matchingRecords: "Matching records",
     reportTitle: "Financial report", reportSubtitle: "A summary of your household spending.",
     averageExpense: "Average expense", perTransaction: "Per transaction", spendingBreakdown: "SPENDING BREAKDOWN",
     byCategory: "By category", recentActivity: "RECENT ACTIVITY", monthlySpending: "Monthly spending",
@@ -61,7 +61,7 @@ const TEXT = {
     filterRecipient: "Filtrer par bénéficiaire", recipient: "Bénéficiaire",
     noCategory: "Aucune catégorie", conflict: "Un élément portant ce nom existe déjà.", totalSpent: "Total des dépenses",
     reportTitle: "Rapport financier", reportSubtitle: "Un aperçu des dépenses du foyer.",
-    filteredTotal: "Selon les filtres", transactions: "Transactions", matchingRecords: "Résultats correspondants",
+    filteredTotal: "Selon les filtres", selectionTotal: "Total",transactions: "Transactions", matchingRecords: "Résultats correspondants",
     averageExpense: "Dépense moyenne", perTransaction: "Par transaction", spendingBreakdown: "RÉPARTITION DES DÉPENSES",
     byCategory: "Par catégorie", recentActivity: "ACTIVITÉ RÉCENTE", monthlySpending: "Dépenses mensuelles",
     ledger: "LE GRAND LIVRE", all: "Tout", search: "Rechercher des dépenses", searchPlaceholder: "Commerçant ou notes…", date: "Date",
@@ -445,6 +445,8 @@ async function loadExpenses() {
   renderCategoryChart(data.categories);
   renderMonthlyChart(data.monthly);
   renderExpenses(data.items);
+  $("#expense-total").textContent = money(data.total);
+  $("#expense-total-row").hidden = data.items.length === 0;
   $("#empty-state").hidden = data.items.length > 0;
   $("#empty-state").textContent = tr("noExpenses");
   $("#previous-page").disabled = currentPage <= 1;

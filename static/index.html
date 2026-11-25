@@ -66,7 +66,8 @@
           <th><label class="sr-only" for="budget-recipient-filter" data-i18n="filterRecipient"></label><select id="budget-recipient-filter" data-search-field="filter_transfer_to"></select></th>
           <th><input aria-label="Filter description" data-search-field="filter_description"></th>
           <th><button id="clear-filters-button" class="icon-button filter-clear-button" type="button" data-i18n-aria-label="clearFilters" data-i18n-title="clearFilters"><svg><use href="#i-close"></use></svg></button></th>
-        </tr></thead><tbody id="expense-rows"></tbody></table>
+        </tr></thead><tbody id="expense-rows"></tbody>
+        <tfoot id="expense-total-row"><tr><td colspan="3" class="total-label-cell" data-i18n="selectionTotal"></td><td id="expense-total" class="amount-cell"></td><td colspan="4"></td></tr></tfoot></table>
         <p id="empty-state" class="empty-state" role="status" hidden></p></div>
         <div class="table-footer"><span id="page-status"></span><div class="pagination"><button id="previous-page" class="icon-button" type="button" aria-label="Previous page" title="Previous page"><svg><use href="#i-chevron-left"></use></svg></button><button id="next-page" class="icon-button" type="button" aria-label="Next page" title="Next page"><svg><use href="#i-chevron-right"></use></svg></button></div><button id="add-expense-button" class="icon-button primary-button" type="button" data-i18n-aria-label="addExpense" data-i18n-title="addExpenseTooltip"><svg><use href="#i-plus"></use></svg></button></div>
       </section>

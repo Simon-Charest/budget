@@ -98,6 +98,9 @@ thead .table-filters th:last-child { padding-right: 23px; }
 .table-filters th:last-child { text-align: right; }
 td { max-width: 250px; padding: 13px 15px; border-top: 1px solid #f0f1ed; color: #69756e; font-size: 11px; }
 tbody tr:hover { background: #fafbf7; }
+tfoot td { border-top: 2px solid var(--line); background: #fafbf8; }
+tfoot .total-label-cell { color: #8b948e; font-weight: 600; text-transform: uppercase; letter-spacing: .2px; font-size: 10px; }
+tfoot[hidden] { display: none; }
 .date-cell { white-space: nowrap; }
 .merchant-cell { color: #33423a; font-weight: 600; }
 .category-cell { color: #738677; }
