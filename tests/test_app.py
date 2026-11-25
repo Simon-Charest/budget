@@ -798,6 +798,64 @@ def test_medication_is_merged_into_existing_health(monkeypatch, tmp_path):
     client.close()
 
 
+def test_car_is_merged_into_existing_transportation(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-25-merge-car-into-transportation'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [("car", "Car", "Voiture"), ("transit", "Transportation", "Transport")],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category) VALUES (?, ?, ?)",
+            [("2025-11-01", 60.0, "car"), ("2025-11-02", 3.5, "transit")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        assert not db.execute("SELECT 1 FROM categories WHERE category_key = 'car'").fetchone()
+        assert tuple(db.execute("SELECT name_en, name_fr FROM categories WHERE category_key = 'transit'").fetchone()) == ("Transportation", "Transport")
+        assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'transit' AND spent_on LIKE '2025-11-%'").fetchone()[:] == (2, 63.5)
+    client.close()
+
+
+def test_order_is_merged_into_existing_restaurant(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-25-merge-order-into-restaurant'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [("order", "Order", "Commande"), ("restaurant", "Restaurant", "Restaurant")],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category) VALUES (?, ?, ?)",
+            [("2025-12-01", 30.0, "order"), ("2025-12-02", 20.0, "restaurant")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        assert not db.execute("SELECT 1 FROM categories WHERE category_key = 'order'").fetchone()
+        assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'restaurant' AND spent_on LIKE '2025-12-%'").fetchone()[:] == (2, 50.0)
+    client.close()
+
+
+def test_tax_and_income_are_merged_into_existing_finance(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    with budget_app.connect() as db:
+        db.execute("DELETE FROM app_metadata WHERE key = 'migration:2026-11-25-merge-tax-and-income-into-finance'")
+        db.executemany(
+            "INSERT INTO categories (category_key, name_en, name_fr) VALUES (?, ?, ?)",
+            [("tax", "Tax", "Impôt"), ("income", "Income", "Revenu"), ("finance", "Finance", "Finances")],
+        )
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category) VALUES (?, ?, ?)",
+            [("2026-01-01", 500.0, "tax"), ("2026-01-02", -100.0, "income"), ("2026-01-03", 10.0, "finance")],
+        )
+    budget_app.initialize_database()
+    with budget_app.connect() as db:
+        assert not db.execute("SELECT 1 FROM categories WHERE category_key IN ('tax', 'income')").fetchone()
+        assert db.execute("SELECT COUNT(*), SUM(amount) FROM expenses WHERE category = 'finance' AND spent_on LIKE '2026-01-%'").fetchone()[:] == (3, 410.0)
+    client.close()
+
+
 def test_categories_are_grouped_into_one_word_categories(monkeypatch, tmp_path):
     budget_app, client = create_test_app(monkeypatch, tmp_path)
     with budget_app.connect() as db:

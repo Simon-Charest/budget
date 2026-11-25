@@ -545,6 +545,21 @@ def _migrate_medication_into_health(db: sqlite3.Connection) -> None:
     _merge_categories(db, ("drug", "medication"), "health", "Health", "Santé")
 
 
+def _migrate_car_into_transportation(db: sqlite3.Connection) -> None:
+    """Move every Car expense (gas, parking and fines included) to Transportation, then delete Car."""
+    _merge_categories(db, ("car",), "transit", "Transportation", "Transport")
+
+
+def _migrate_order_into_restaurant(db: sqlite3.Connection) -> None:
+    """Move every Order expense (shipping included) to Restaurant, then delete Order."""
+    _merge_categories(db, ("order",), "restaurant", "Restaurant", "Restaurant")
+
+
+def _migrate_tax_and_income_into_finance(db: sqlite3.Connection) -> None:
+    """Move every Tax and Income expense to Finance, then delete Tax and Income."""
+    _merge_categories(db, ("tax", "income"), "finance", "Finance", "Finances")
+
+
 # (target key, English name, French name, rename the target?, source category keys)
 CATEGORY_GROUPS_2026_11_24: tuple[tuple[str, str, str, bool, tuple[str, ...]], ...] = (
     ("miscellaneous", "Miscellaneous", "Divers", False, ("unknown", "lost", "services", "work", "entreprise")),
@@ -701,6 +716,9 @@ MIGRATIONS = (
     ("2026-11-24-merge-bus-and-transportation-into-transit", _migrate_bus_and_transportation_into_transit),
     ("2026-11-24-merge-medication-into-health", _migrate_medication_into_health),
     ("2026-11-24-group-categories", _migrate_group_categories),
+    ("2026-11-25-merge-car-into-transportation", _migrate_car_into_transportation),
+    ("2026-11-25-merge-order-into-restaurant", _migrate_order_into_restaurant),
+    ("2026-11-25-merge-tax-and-income-into-finance", _migrate_tax_and_income_into_finance),
 )
 
 
