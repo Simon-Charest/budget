@@ -32,6 +32,9 @@ button, a, select { -webkit-tap-highlight-color: transparent; }
 .icon-button:disabled { opacity: .42; cursor: default; }
 .icon-button svg, .primary-button svg, .login-note svg, .search-box svg, .card-icon svg, .heading-icon { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .language-button { width: auto; padding: 0 10px; border-radius: 22px; font-size: 11px; font-weight: 700; }
+.language-button svg.flag { height: 14px; stroke: none; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0,0,0,.12); }
+.language-button svg.flag-qc { width: 21px; }
+.language-button svg.flag-ca { width: 28px; }
 main { width: min(1180px, calc(100% - 48px)); min-height: calc(100vh - 150px); flex: 1 0 auto; margin: 0 auto; padding: 54px 0 70px; }
 h1, h2, p { margin-top: 0; }
 h1, h2, strong, .summary-card > strong { font-weight: 700; }

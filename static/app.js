@@ -154,6 +154,10 @@ function applyLanguage() {
     el.placeholder = tr(key);
   });
   $("#language-code").textContent = language === "en" ? "FR" : "EN";
+  // The button shows the language it switches to: Québec for French, Canada for English
+  const flag = language === "en" ? "qc" : "ca";
+  $("#language-flag").setAttribute("class", `flag flag-${flag}`);
+  $("#language-flag use").setAttribute("href", `#i-flag-${flag}`);
   $("#language-button").setAttribute("aria-label", tr("changeLanguage"));
   $("#language-button").title = tr("changeLanguage");
   $("#logout-button").setAttribute("aria-label", tr("signOut"));
