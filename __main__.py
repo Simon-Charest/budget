@@ -1218,8 +1218,10 @@ def expenses(
             """,
             [*params, page_size, (page - 1) * page_size],
         ).fetchall()
+        balances = _partner_balances(db, where, params)
 
     return {
+        "balances": balances,
         "items": [dict(row) for row in rows],
         "count": summary["count"],
         "total": round(summary["total"], 2),
@@ -1229,6 +1231,56 @@ def expenses(
         "categories": [dict(row) for row in category_totals],
         "monthly": [dict(row) for row in reversed(monthly)],
     }
+
+
+SHARED_ACCOUNT = "conjoint"
+
+
+def _partner_balances(db: sqlite3.Connection, where: str, params: list[Any]) -> list[dict[str, Any]]:
+    """What each partner owes each other partner for the selected expenses.
+
+    The partners are the people with a sign-in account. An expense a partner pays for the shared
+    account is split evenly between all partners; one paid for another partner is owed in full.
+    Personal expenses and those paid by anyone else (the business, the shared account) owe nothing.
+    """
+    partners = sorted(
+        {row["name"] for row in db.execute("SELECT trim(first_name || ' ' || last_name) AS name FROM users")},
+        key=str.casefold,
+    )
+    if len(partners) < 2:
+        return []
+    by_key = {_name_key(name): name for name in partners}
+    shared_key = _name_key(SHARED_ACCOUNT)
+    owed = {(debtor, creditor): {"shared": 0.0, "direct": 0.0} for debtor in partners for creditor in partners if debtor != creditor}
+    rows = db.execute(
+        f"SELECT paid_by, transfer_to, SUM(amount) AS total FROM expenses{where} GROUP BY paid_by, transfer_to",
+        params,
+    )
+    for row in rows:
+        payer = by_key.get(_name_key(row["paid_by"]))
+        if payer is None:
+            continue
+        recipient_key = _name_key(row["transfer_to"])
+        if recipient_key == shared_key:
+            for debtor in partners:
+                if debtor != payer:
+                    owed[(debtor, payer)]["shared"] += row["total"] / len(partners)
+        elif (recipient := by_key.get(recipient_key)) and recipient != payer:
+            owed[(recipient, payer)]["direct"] += row["total"]
+    return [
+        {
+            "debtor": debtor,
+            "creditor": creditor,
+            "shared": round(amounts["shared"], 2),
+            "direct": round(amounts["direct"], 2),
+            "total": round(amounts["shared"] + amounts["direct"], 2),
+        }
+        for (debtor, creditor), amounts in owed.items()
+    ]
+
+
+def _name_key(name: str | None) -> str:
+    return unicodedata.normalize("NFC", name or "").strip().casefold()
 
 
 def _expense_values(data: ExpenseInput) -> tuple[Any, ...]:

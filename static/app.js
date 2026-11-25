@@ -25,6 +25,10 @@ const TEXT = {
     merchant: "Merchant", description: "Description", amount: "Amount", transferTo: "Recipient",
     noExpenses: "No expenses match these filters.",
     pageOf: "Page {page} of {pages} · {count} expenses", usersTitle: "Users",
+    sharedAccount: "SHARED ACCOUNT", whoOwesWhom: "Who owes whom", owesTo: "{debtor} owes {creditor}",
+    owesDetail: "Half of shared expenses: {shared} · Paid on their behalf: {direct}",
+    balanceNet: "Balance: {debtor} owes {creditor} {amount}", balanceEven: "Balance: nobody owes anything.",
+    balanceNote: "For the selected filters. Shared-account (conjoint) expenses are split evenly; expenses paid for the other person are owed in full.",
     newAccount: "NEW PERSON", addUser: "Add a person",
     firstName: "First name", lastName: "Last name", passwordHint: "Use at least 12 characters.", optionalPassword: "Leave blank to keep the current password.",
     noAccount: "No sign-in account", accountDetailsOptional: "Leave email, account type, and password blank for a household member without sign-in access.",
@@ -68,6 +72,10 @@ const TEXT = {
     merchant: "Commerçant", description: "Description", amount: "Montant", transferTo: "Bénéficiaire",
     noExpenses: "Aucune dépense ne correspond aux filtres.",
     pageOf: "Page {page} sur {pages} · {count} dépenses", usersTitle: "Utilisateurs",
+    sharedAccount: "COMPTE CONJOINT", whoOwesWhom: "Qui doit quoi", owesTo: "{debtor} doit à {creditor}",
+    owesDetail: "Moitié des dépenses communes : {shared} · Payé pour cette personne : {direct}",
+    balanceNet: "Solde : {debtor} doit {amount} à {creditor}", balanceEven: "Solde : personne ne doit rien.",
+    balanceNote: "Selon les filtres. Les dépenses du compte conjoint sont partagées moitié-moitié; celles payées pour l’autre personne sont dues en entier.",
     newAccount: "NOUVELLE PERSONNE",
     addUser: "Ajouter une personne", editUser: "Modifier la personne", saveUser: "Enregistrer la personne", firstName: "Prénom", lastName: "Nom de famille",
     passwordHint: "Utilisez au moins 12 caractères.", optionalPassword: "Laissez ce champ vide pour conserver le mot de passe actuel.", createAccount: "Créer le compte", accessList: "COMPTES AUTORISÉS",
@@ -117,6 +125,7 @@ function setSelectedMonth(value) {
 }
 
 function tr(key) { return TEXT[language][key] || key; }
+function format(key, values) { return tr(key).replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match); }
 
 function applyLanguage() {
   document.documentElement.lang = language;
@@ -444,6 +453,7 @@ async function loadExpenses() {
   $("#average-expense").textContent = money(data.average);
   renderCategoryChart(data.categories);
   renderMonthlyChart(data.monthly);
+  renderBalances(data.balances || []);
   renderExpenses(data.items);
   $("#expense-total").textContent = money(data.total);
   $("#expense-total-row").hidden = data.items.length === 0;
@@ -500,6 +510,40 @@ function renderMonthlyChart(items) {
     value.textContent = money(item.total);
     row.append(label, track, value);
     root.append(row);
+  }
+}
+
+function renderBalances(items) {
+  $("#balance-panel").hidden = items.length === 0;
+  const root = $("#balance-list");
+  root.replaceChildren();
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = "balance-row";
+    const label = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = format("owesTo", { debtor: item.debtor, creditor: item.creditor });
+    const detail = document.createElement("span");
+    detail.className = "balance-detail";
+    detail.textContent = format("owesDetail", { shared: money(item.shared), direct: money(item.direct) });
+    label.append(title, detail);
+    const value = document.createElement("span");
+    value.className = "amount-cell";
+    value.textContent = money(item.total);
+    row.append(label, value);
+    root.append(row);
+  }
+  // With two partners, the two debts cancel out into a single amount
+  const net = $("#balance-net");
+  net.hidden = items.length !== 2;
+  if (items.length === 2) {
+    const [first, second] = items;
+    const difference = Math.round((first.total - second.total) * 100) / 100;
+    if (difference === 0) net.textContent = tr("balanceEven");
+    else {
+      const [debtor, creditor] = difference > 0 ? [first.debtor, first.creditor] : [second.debtor, second.creditor];
+      net.textContent = format("balanceNet", { debtor, creditor, amount: money(Math.abs(difference)) });
+    }
   }
 }
 

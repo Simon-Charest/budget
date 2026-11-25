@@ -856,6 +856,36 @@ def test_tax_and_income_are_merged_into_existing_finance(monkeypatch, tmp_path):
     client.close()
 
 
+def test_report_lists_what_each_partner_owes_the_other(monkeypatch, tmp_path):
+    budget_app, client = create_test_app(monkeypatch, tmp_path)
+    budget_app.create_user("simon@example.ca", "correct horse battery", "Simon", "Charest", is_admin=True)
+    budget_app.create_user("julie@example.ca", "correct horse battery", "Julie", "Emond")
+    with budget_app.connect() as db:
+        db.executemany(
+            "INSERT INTO expenses (spent_on, amount, category, paid_by, transfer_to) VALUES (?, ?, ?, ?, ?)",
+            [
+                ("2027-03-01", 100.0, "food", "Simon Charest", "conjoint"),
+                ("2027-03-02", -20.0, "food", "Simon Charest", "Conjoint"),
+                ("2027-03-03", 30.0, "food", "Simon Charest", "Julie Emond"),
+                ("2027-03-04", 60.0, "food", "Julie Emond", "conjoint"),
+                ("2027-03-05", 500.0, "food", "Julie Emond", None),
+                ("2027-03-06", 999.0, "food", "SLCTI", "conjoint"),
+                ("2027-03-07", 7.0, "food", "Julie Emond", "SLCTI"),
+            ],
+        )
+    client.post(
+        "/api/login",
+        json={"email": "simon@example.ca", "password": "correct horse battery"},
+        headers={"Origin": "http://testserver"},
+    )
+    balances = client.get("/api/expenses", params={"month": "2027-03"}).json()["balances"]
+    assert balances == [
+        {"debtor": "Julie Emond", "creditor": "Simon Charest", "shared": 40.0, "direct": 30.0, "total": 70.0},
+        {"debtor": "Simon Charest", "creditor": "Julie Emond", "shared": 30.0, "direct": 0.0, "total": 30.0},
+    ]
+    client.close()
+
+
 def test_categories_are_grouped_into_one_word_categories(monkeypatch, tmp_path):
     budget_app, client = create_test_app(monkeypatch, tmp_path)
     with budget_app.connect() as db:

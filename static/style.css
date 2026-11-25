@@ -65,6 +65,14 @@ h2 { margin: 0; font-size: 18px; letter-spacing: -.35px; }
 .panel-heading .eyebrow { margin-bottom: 5px; }
 .heading-icon { color: #98a69b; }
 .category-chart { display: grid; gap: 14px; margin-top: 25px; }
+.balance-panel { margin-bottom: 20px; }
+.balance-panel[hidden], .balance-net[hidden] { display: none; }
+.balance-list { display: grid; margin-top: 18px; }
+.balance-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid #f0f1ed; font-size: 12px; }
+.balance-row strong { display: block; color: var(--ink); }
+.balance-detail { display: block; margin-top: 3px; color: #8b948e; font-size: 10px; }
+.balance-net { margin-top: 6px; padding: 13px 15px; border-radius: 9px; color: var(--green); background: var(--green-light); font-size: 13px; font-weight: 700; }
+.balance-note { margin-top: 10px; color: #8b948e; font-size: 10px; }
 .bar-row { display: grid; grid-template-columns: minmax(74px, .7fr) 1.2fr minmax(76px, auto); align-items: center; gap: 11px; font-size: 11px; }
 .bar-name { overflow: hidden; color: #5f6a64; text-overflow: ellipsis; white-space: nowrap; }
 .bar-track { height: 7px; overflow: hidden; border-radius: 8px; background: #f0f2ed; }

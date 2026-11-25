@@ -126,6 +126,11 @@
         <section class="panel category-panel"><div class="panel-heading"><div><p class="eyebrow" data-i18n="spendingBreakdown"></p><h2 data-i18n="byCategory"></h2></div><svg class="heading-icon"><use href="#i-chart"></use></svg></div><div id="category-chart" class="category-chart"></div></section>
         <section class="panel monthly-panel"><div class="panel-heading"><div><p class="eyebrow" data-i18n="recentActivity"></p><h2 data-i18n="monthlySpending"></h2></div><svg class="heading-icon"><use href="#i-calendar"></use></svg></div><div id="monthly-chart" class="monthly-chart"></div></section>
       </div>
+      <section id="balance-panel" class="panel balance-panel" hidden><div class="panel-heading"><div><p class="eyebrow" data-i18n="sharedAccount"></p><h2 data-i18n="whoOwesWhom"></h2></div><svg class="heading-icon"><use href="#i-users"></use></svg></div>
+        <div id="balance-list" class="balance-list"></div>
+        <p id="balance-net" class="balance-net"></p>
+        <p class="balance-note" data-i18n="balanceNote"></p>
+      </section>
     </section>
 
     <dialog id="expense-dialog" class="expense-dialog">
