@@ -1170,7 +1170,7 @@ def expenses(
         )
         params.extend([pattern, pattern, pattern])
     where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-    page_size = 50
+    page_size = 10
     sort_columns = {
         "spent_on": "expenses.spent_on",
         "supplier": "expenses.supplier COLLATE NOCASE",

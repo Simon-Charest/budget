@@ -2,8 +2,8 @@
 
 const TEXT = {
   en: {
-    navBudget: "Budget", navReport: "Report", navCategories: "Categories", navUsers: "Users", email: "Email address", password: "Password", signIn: "Sign in",
-    budgetTitle: "Budget",
+    navBudget: "Expenses", navReport: "Report", navCategories: "Categories", navUsers: "Users", email: "Email address", password: "Password", signIn: "Sign in",
+    budgetTitle: "Expenses",
     budgetSubtitle: "Every expense, all in one place.", year: "Year", month: "Month", category: "Category", payer: "Payer", selectMember: "Select a person", clearFilters: "Clear filters", filterOptionsFailed: "Filter options could not be loaded. Please reload the page.", actions: "Actions", addExpense: "Add expense", editExpense: "Edit expense",
     deleteExpense: "Delete expense", addExpenseTooltip: "Add", editExpenseTooltip: "Edit", deleteExpenseTooltip: "Delete", confirmDeleteExpense: "Delete this expense?", saveExpense: "Save expense",
     categoryEnglish: "English name", addCategory: "Add category", editCategory: "Edit category",
@@ -46,12 +46,12 @@ const TEXT = {
     cannotDemoteAdmin: "You cannot demote your own account or the last administrator.",
     emailOrPassword: "Email or password is incorrect.", passwordTooShort: "Password must be at least 12 characters.",
     confirmRemove: "Remove this account?", signOut: "Sign out", changeLanguage: "Change language",
-    previousPage: "Previous page", nextPage: "Next page",
+    previousPage: "Previous page", nextPage: "Next page", firstPage: "First page", lastPage: "Last page",
   },
   fr: {
-    navBudget: "Budget", navReport: "Rapport", navCategories: "Catégories", navUsers: "Utilisateurs", email: "Adresse courriel", password: "Mot de passe",
+    navBudget: "Dépenses", navReport: "Rapport", navCategories: "Catégories", navUsers: "Utilisateurs", email: "Adresse courriel", password: "Mot de passe",
     signIn: "Connexion",
-    budgetTitle: "Budget", budgetSubtitle: "Toutes vos dépenses, au même endroit.",
+    budgetTitle: "Dépenses", budgetSubtitle: "Toutes vos dépenses, au même endroit.",
     year: "Année", month: "Mois", category: "Catégorie", payer: "Payeur", selectMember: "Sélectionner une personne", clearFilters: "Effacer les filtres", filterOptionsFailed: "Impossible de charger les filtres. Veuillez actualiser la page.", actions: "Actions", addExpense: "Ajouter une dépense", editExpense: "Modifier la dépense",
     deleteExpense: "Supprimer la dépense", addExpenseTooltip: "Ajouter", editExpenseTooltip: "Modifier", deleteExpenseTooltip: "Supprimer", confirmDeleteExpense: "Supprimer cette dépense ?", saveExpense: "Enregistrer",
     categoryEnglish: "Nom anglais", addCategory: "Ajouter une catégorie", editCategory: "Modifier la catégorie",
@@ -95,7 +95,7 @@ const TEXT = {
     cannotDemoteAdmin: "Vous ne pouvez pas rétrograder votre propre compte ni le dernier administrateur.",
     emailOrPassword: "Adresse courriel ou mot de passe incorrect.",
     passwordTooShort: "Le mot de passe doit contenir au moins 12 caractères.", confirmRemove: "Supprimer ce compte ?",
-    signOut: "Déconnexion", changeLanguage: "Langue", previousPage: "Page précédente", nextPage: "Page suivante",
+    signOut: "Déconnexion", changeLanguage: "Langue", previousPage: "Page précédente", nextPage: "Page suivante", firstPage: "Première page", lastPage: "Dernière page",
   },
 };
 
@@ -105,6 +105,7 @@ let currentUser = null;
 let currentPage = 1;
 let expenseCount = 0;
 let visibleExpenseCount = 0;
+let expensePageCount = 1;
 let expenseSortField = "spent_on";
 let expenseSortDirection = "asc";
 let searchTimer;
@@ -162,10 +163,10 @@ function applyLanguage() {
   $("#language-button").title = tr("changeLanguage");
   $("#logout-button").setAttribute("aria-label", tr("signOut"));
   $("#logout-button").title = tr("signOut");
-  $("#previous-page").setAttribute("aria-label", tr("previousPage"));
-  $("#previous-page").title = tr("previousPage");
-  $("#next-page").setAttribute("aria-label", tr("nextPage"));
-  $("#next-page").title = tr("nextPage");
+  for (const [id, key] of [["first-page", "firstPage"], ["previous-page", "previousPage"], ["next-page", "nextPage"], ["last-page", "lastPage"]]) {
+    $(`#${id}`).setAttribute("aria-label", tr(key));
+    $(`#${id}`).title = tr(key);
+  }
   document.querySelectorAll(".icon-submit").forEach((button) => {
     const labelKey = button.closest("#login-form") ? "signIn"
       : button.closest("#expense-form") ? "saveExpense"
@@ -466,8 +467,9 @@ async function loadExpenses() {
   $("#expense-total-row").hidden = data.items.length === 0;
   $("#empty-state").hidden = data.items.length > 0;
   $("#empty-state").textContent = tr("noExpenses");
-  $("#previous-page").disabled = currentPage <= 1;
-  $("#next-page").disabled = currentPage >= pageCount;
+  expensePageCount = pageCount;
+  $("#first-page").disabled = $("#previous-page").disabled = currentPage <= 1;
+  $("#last-page").disabled = $("#next-page").disabled = currentPage >= pageCount;
   renderPageStatus(pageCount);
 }
 
@@ -597,7 +599,7 @@ function renderExpenses(items) {
   }
 }
 
-function renderPageStatus(pageCount = Math.max(1, Math.ceil(expenseCount / 50))) {
+function renderPageStatus(pageCount = expensePageCount) {
   const status = $("#page-status");
   if (!status || !currentUser || $("#budget-view").hidden) return;
   const number = new Intl.NumberFormat(language === "fr" ? "fr-CA" : "en-CA");
@@ -979,6 +981,8 @@ $("#clear-report-filters").addEventListener("click", () => {
 });
 $("#previous-page").addEventListener("click", () => { if (currentPage > 1) { currentPage -= 1; loadExpenses().catch(showError); } });
 $("#next-page").addEventListener("click", () => { currentPage += 1; loadExpenses().catch(showError); });
+$("#first-page").addEventListener("click", () => { currentPage = 1; loadExpenses().catch(showError); });
+$("#last-page").addEventListener("click", () => { currentPage = expensePageCount; loadExpenses().catch(showError); });
 function updateExpenseSortIndicators() {
   document.querySelectorAll("[data-budget-sort]").forEach((button) => {
     const active = button.dataset.budgetSort === expenseSortField;

@@ -163,7 +163,7 @@ def test_budget_apis_are_private_and_login_filters_expenses(monkeypatch, tmp_pat
     home = client.get("/")
     assert home.status_code == 200
     assert '<span class="brand-mark">B</span><span>Budget</span>' in home.text
-    assert '© <span id="current-year"></span> Budget' in home.text
+    assert '<span class="footer-right" data-i18n="copyright"></span>' in home.text
     assert 'class="brand-dot"' not in home.text
     assert "login-form" in home.text
     login_panel = home.text[home.text.index('<div class="login-panel">'):home.text.index("</section>", home.text.index('<div class="login-panel">'))]
