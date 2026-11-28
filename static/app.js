@@ -40,7 +40,7 @@ const TEXT = {
     confirmRemoveHouseholdMember: "Remove this person?",
     householdMemberInUse: "This person is assigned to existing expenses and cannot be removed.",
     personNameExists: "A person with that name already exists.",
-    loginFailed: "We couldn't sign you in. Check your email and password.", failed: "Something went wrong. Please try again.",
+    loginFailed: "We couldn't sign you in. Check your email and password.", sessionExpired: "Your session has expired. Please sign in again.", failed: "Something went wrong. Please try again.",
     accountExists: "An account with that email already exists.", notAllowed: "You don't have permission to do that.",
     invalidInput: "Invalid input.", cannotRemove: "This account cannot be removed.",
     cannotDemoteAdmin: "You cannot demote your own account or the last administrator.",
@@ -88,7 +88,7 @@ const TEXT = {
     confirmRemoveHouseholdMember: "Supprimer cette personne ?",
     householdMemberInUse: "Cette personne est associée à des dépenses et ne peut pas être supprimée.",
     personNameExists: "Une personne portant ce nom existe déjà.",
-    loginFailed: "Connexion impossible. Vérifiez votre adresse courriel et votre mot de passe.",
+    loginFailed: "Connexion impossible. Vérifiez votre adresse courriel et votre mot de passe.", sessionExpired: "Votre session a expiré. Veuillez vous reconnecter.",
     failed: "Une erreur est survenue. Veuillez réessayer.", accountExists: "Un compte utilise déjà cette adresse courriel.",
     notAllowed: "Vous n’avez pas l’autorisation d’effectuer cette action.",
     invalidInput: "Entrée invalide.", cannotRemove: "Ce compte ne peut pas être supprimé.",
@@ -192,6 +192,12 @@ async function api(url, options = {}) {
   const headers = { Accept: "application/json", ...options.headers };
   if (options.body) headers["Content-Type"] = "application/json";
   const response = await fetch(url, { credentials: "same-origin", ...options, headers });
+  if (response.status === 401 && currentUser && url !== "/api/login") {
+    endExpiredSession();
+    const error = new Error(tr("sessionExpired"));
+    error.status = 401;
+    throw error;
+  }
   if (!response.ok) {
     let detail = tr("failed");
     try { detail = (await response.json()).detail || detail; } catch { /* Response isn't JSON. */ }
@@ -204,6 +210,17 @@ async function api(url, options = {}) {
     throw error;
   }
   return response.status === 204 ? null : response.json();
+}
+
+// The server no longer knows this session (expired or signed out elsewhere): back to the sign-in screen
+function endExpiredSession() {
+  currentUser = null;
+  document.querySelectorAll("dialog[open]").forEach((dialog) => dialog.close());
+  setSelectedMonth(null);
+  history.replaceState(null, "", location.pathname);
+  setView("budget");
+  $("#login-error").textContent = tr("sessionExpired");
+  $("#login-error").hidden = false;
 }
 
 function money(value) {
@@ -1012,6 +1029,11 @@ window.addEventListener("hashchange", () => {
     : location.hash === "#categories" ? "categories"
       : location.hash === "#report" ? "report" : "budget";
   setView(view);
+});
+
+// A session can expire while the tab sits in the background: check as soon as it comes back
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && currentUser) api("/api/me").catch(() => {});
 });
 
 async function start() {

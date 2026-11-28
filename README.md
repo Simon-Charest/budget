@@ -32,7 +32,7 @@ Create a private `.env` in the project root using the settings below. `.env.exam
 | `BUDGET_HOST` | `localhost` | Address Uvicorn listens on. Keep localhost when using Nginx. |
 | `BUDGET_PORT` | `80` | Uvicorn listening port. |
 | `BUDGET_COOKIE_SECURE` | `false` | Set to `true` when the public site uses HTTPS. |
-| `BUDGET_SESSION_HOURS` | `12` | Sign-in session lifetime. |
+| `BUDGET_SESSION_HOURS` | `720` | Sign-in session lifetime in hours (720 = 30 days). When it ends, the app returns to the sign-in screen. |
 | `BUDGET_PROXY_HEADERS` | `true` | Honor proxy headers from the configured trusted proxy. |
 | `BUDGET_FORWARDED_ALLOW_IPS` | `localhost` | Trusted proxy IPs for Uvicorn; do not use `*` on a public server. |
 | `BUDGET_LOG_LEVEL` | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. |
